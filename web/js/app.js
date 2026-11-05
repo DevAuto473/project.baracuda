@@ -28,6 +28,40 @@ document.addEventListener('dragstart', (e) => e.preventDefault());
 })();
 
 const $ = (id) => document.getElementById(id);
+
+// ---------------------------------------------------------------- installable app (see sw.js)
+// Chrome and Edge offer the install through an event; Safari on iPhone and iPad has no such event,
+// so there the button only explains where the option is.
+let installPrompt = null;
+const standalone = () => (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
+const onIos = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  installPrompt = e;
+  if (!standalone()) $('installBtn').hidden = false;
+});
+window.addEventListener('appinstalled', () => { installPrompt = null; $('installBtn').hidden = true; });
+async function setupPwa() {
+  if (!('serviceWorker' in navigator)) return;
+  try {
+    await navigator.serviceWorker.register('sw.js');
+    await navigator.serviceWorker.ready; // the worker only activates once everything is stored
+    $('pwaNote').hidden = false; // "ready to play offline"
+  } catch (_) { /* no worker (private window, old browser): the site simply needs a connection */ }
+  if (onIos() && !standalone()) $('installBtn').hidden = false;
+  $('installBtn').onclick = async () => {
+    if (installPrompt) {
+      installPrompt.prompt();
+      try { await installPrompt.userChoice; } catch (_) { /* ignore */ }
+      installPrompt = null;
+      $('installBtn').hidden = true;
+    } else {
+      const note = $('pwaNote');
+      note.hidden = false;
+      note.textContent = t('iosHint');
+    }
+  };
+}
 const els = {
   board: $('board'), status: $('status'), color: $('color'), moves: $('moves'),
   evalWhite: $('evalWhite'), evalLabel: $('evalLabel'), evalbar: $('evalbar'),
@@ -635,6 +669,7 @@ async function boot() {
   state.ready = true;
   await newGame();
   window.__barracudaReady = true; // the board is drawn: the loading screen (js/splash.js) may leave
+  setupPwa();
 
   $('newGame').onclick = () => { saveSettings(); newGame(); };
   $('undo').onclick = undo;

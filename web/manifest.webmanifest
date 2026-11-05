@@ -1,0 +1,20 @@
+{
+  "id": "./",
+  "name": "Barracuda - play the chess engine",
+  "short_name": "Barracuda",
+  "description": "Play chess against Barracuda, a C++ engine with a self-trained NNUE, entirely in your browser and without a connection.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "lang": "en",
+  "dir": "auto",
+  "categories": ["games"],
+  "icons": [
+    { "src": "img/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "img/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "img/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

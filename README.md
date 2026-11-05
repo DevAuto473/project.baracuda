@@ -390,6 +390,14 @@ cat base_*.txt style_*.txt human.txt > all.txt
 
 **Interface size.** The whole page is drawn at 80% of its natural size, as if the browser were zoomed out. The number is `--ui-scale` at the top of `web/css/style.css` (every length in the stylesheet is in `rem`, so this one value scales text, buttons, panels and the network drawing together; breakpoints and 1 to 2 px borders are unchanged). To try another size without editing anything, open the page with `?scale=0.7` (anything from 0.5 to 1.3): the choice is remembered in that browser, and `?scale=default` forgets it. In `web/js/netviz.js`, `PIECE_OPACITY` sets how solid the piece that forms from particles looks.
 
+**Install it and play without a connection.** The site is an installable app (PWA). Visit it once while online: the page, the engine, the fonts and the published network (about 2 MB) are stored in the browser, and from then on it opens and plays without any connection. To put it on the home screen:
+- **Android (Chrome) and desktop (Chrome, Edge):** the footer shows **Install the app** (or use the browser's menu, *Install app*).
+- **iPhone and iPad (Safari):** tap Share, then *Add to Home Screen* (the footer button reminds you where). The first visit has to be online.
+
+Offline you can play the full game with the engine; nothing is sent anywhere (shared games, if you had that on, simply are not sent, and the thank-you screen then says so honestly). When you are online again and a new version has been deployed, the app updates itself in the background and uses the new version the next time it is opened or refreshed.
+
+How it works, if you change the site: `web/sw.js` stores the files listed in its `SHELL` array when it installs (all or nothing) and serves them from that copy; `net/manifest.json` and `config.json` are asked from the network first, with the stored copy as the fallback. The deploy stamps the commit id into `sw.js`, so every deployment installs a new copy and deletes the old one. **If you add a file the page loads** (a script, an image, a font), add it to `SHELL` too: `node web/test/pwa_check.mjs` (run by the deploy workflow) fails when a file the page uses is missing from the list, and also checks the manifest and the icon sizes. The icons are in `web/img` (`icon-192.png`, `icon-512.png`, and `icon-maskable-512.png` with extra margin for round icon masks).
+
 **Right-click and text selection are disabled** on the website (`contextmenu`/`selectstart` handlers at the top of `web/js/app.js`, and the `user-select: none` rule at the end of `web/css/style.css`). This only stops casual copying; the page source stays readable in the browser. Delete those two pieces to bring both back.
 
 **Stylesheet check.** `node web/test/css_check.mjs` fails on an unbalanced brace in `web/css/style.css` (the deploy workflow runs it): browsers silently drop the rules after such a mistake.

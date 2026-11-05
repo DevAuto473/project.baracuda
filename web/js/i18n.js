@@ -52,6 +52,8 @@ const STRINGS = {
     'thanks.off': 'Sharing is switched off, so this game was not saved.',
     'thanks.show': 'Show the board',
     'share.label': 'Share my games anonymously so Barracuda can learn',
+    install: 'Install the app', offlineReady: 'Ready to play offline',
+    iosHint: 'To install: tap Share, then Add to Home Screen',
   },
   ar: {
     title: 'العب ضد باراكودا',
@@ -105,6 +107,8 @@ const STRINGS = {
     'thanks.off': 'المشاركة متوقفة، لذلك لم تُحفظ هذه المباراة.',
     'thanks.show': 'أظهر الرقعة',
     'share.label': 'شارك مبارياتي ليتعلّم منها باراكودا',
+    install: 'ثبّت التطبيق', offlineReady: 'جاهز للعب بدون إنترنت',
+    iosHint: 'للتثبيت: اضغط مشاركة ثم إضافة إلى الشاشة الرئيسية',
   },
 };
 

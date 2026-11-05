@@ -10,6 +10,13 @@
   <link rel="stylesheet" href="css/style.css?v=__BUILD__">
   <link rel="icon" type="image/png" sizes="48x48" href="img/favicon-48.png?v=__BUILD__">
   <link rel="apple-touch-icon" href="img/logo-192.png?v=__BUILD__">
+  <!-- installable app (see sw.js and manifest.webmanifest): add it to the home screen and play without a connection -->
+  <link rel="manifest" href="manifest.webmanifest?v=__BUILD__">
+  <meta name="theme-color" content="#000000">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Barracuda">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <link rel="preload" href="img/logo.webp?v=__BUILD__" as="image" type="image/webp">
   <!-- Loading screen. This block is inline on purpose: it has to paint black with the badge before
        anything else has loaded. Its timing lives in js/splash.js. -->
@@ -136,6 +143,8 @@
   <footer>
     <label class="share" id="shareWrap" hidden><input type="checkbox" id="shareBox" checked> <span data-i18n="share.label">Share my games anonymously so Barracuda can learn</span></label>
     <span data-i18n="footer">Runs entirely in your browser with WebAssembly &mdash; no server, no account. Engine source on GitHub.</span>
+    <button id="installBtn" class="mini" type="button" hidden data-i18n="install">Install the app</button>
+    <span id="pwaNote" class="pwa-note" hidden data-i18n="offlineReady">Ready to play offline</span>
   </footer>
   <script type="module" src="js/app.js?v=__BUILD__"></script>
 </body>
