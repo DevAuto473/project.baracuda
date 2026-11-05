@@ -26,6 +26,7 @@ void glfw_error(int code, const char* msg) { std::fprintf(stderr, "GLFW error %d
 struct Options {
     int target_fps = 60;
     bool vsync = true;
+    bool software_cursor = false; // draw the mouse cursor inside the window (auto-on under WSL)
     const char* screenshot = nullptr; // --screenshot <file.ppm> : render N frames, dump, exit (CI smoke test)
     int screenshot_frames = 90;
     std::vector<const char*> exec; // --exec "<console command>" (repeatable), run at startup
@@ -33,17 +34,22 @@ struct Options {
 
 Options parse(int argc, char** argv) {
     Options o;
+    bool explicit_cursor = false;
     for (int i = 1; i < argc; ++i) {
         if (!std::strcmp(argv[i], "--no-vsync")) o.vsync = false;
+        else if (!std::strcmp(argv[i], "--software-cursor")) o.software_cursor = true;
+        else if (!std::strcmp(argv[i], "--system-cursor")) o.software_cursor = false, explicit_cursor = true;
         else if (!std::strcmp(argv[i], "--fps") && i + 1 < argc) o.target_fps = std::atoi(argv[++i]);
         else if (!std::strcmp(argv[i], "--screenshot") && i + 1 < argc) o.screenshot = argv[++i];
         else if (!std::strcmp(argv[i], "--frames") && i + 1 < argc) o.screenshot_frames = std::atoi(argv[++i]);
         else if (!std::strcmp(argv[i], "--exec") && i + 1 < argc) o.exec.push_back(argv[++i]);
         else if (!std::strcmp(argv[i], "--help")) {
-            std::printf("barracuda [--no-vsync] [--fps N] [--exec \"<console command>\"]... [--screenshot out.ppm --frames N]\n");
+            std::printf("barracuda [--software-cursor|--system-cursor] [--no-vsync] [--fps N] [--exec \"<console command>\"]... [--screenshot out.ppm --frames N]\n");
             std::exit(0);
         }
     }
+    // WSLg often has no usable X cursor theme, which makes the OS cursor invisible over the window
+    if (!explicit_cursor && (std::getenv("WSL_DISTRO_NAME") || std::getenv("WSL_INTEROP"))) o.software_cursor = true;
     if (o.target_fps < 10) o.target_fps = 10;
     return o;
 }
@@ -98,6 +104,7 @@ int main(int argc, char** argv) {
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     io.IniFilename = nullptr; // fixed layout, nothing to persist
+    if (opt.software_cursor) io.MouseDrawCursor = true; // ImGui draws the cursor and hides the OS one
 
     const barracuda::gui::Fonts fonts = barracuda::gui::setup_theme(dpi);
     ImGui_ImplGlfw_InitForOpenGL(window, true);
