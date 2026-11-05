@@ -1,13 +1,13 @@
 {
-  "version": 1793903138,
-  "updated": "2026-11-05T18:25:38Z",
+  "version": 1793904306,
+  "updated": "2026-11-05T18:45:06Z",
   "eval": "nnue",
   "net": "barracuda.bnn",
   "human": "human.mdl",
   "epochs": 78,
   "samples": 224266120,
-  "elo": 2250,
+  "elo": 2312,
   "elo_error": 64,
   "elo_basis": "classical anchor (tactical suite) + measured match advantage",
-  "match": {"games": 100, "wins": 49, "draws": 16, "losses": 35}
+  "match": {"games": 100, "wins": 55, "draws": 21, "losses": 24}
 }
