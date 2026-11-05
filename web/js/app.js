@@ -1,14 +1,15 @@
 // Barracuda web player: UI + game flow. The engine (WebAssembly) lives in engine-worker.js.
 import { pieceSvg } from './pieces.js';
+import { t, getLang, initLang, setLang } from './i18n.js';
 
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 const LEVELS = [
-  { name: 'Beginner', depth: 1, ms: 60 },
-  { name: 'Casual', depth: 3, ms: 150 },
-  { name: 'Club player', depth: 5, ms: 400 },
-  { name: 'Advanced', depth: 8, ms: 900 },
-  { name: 'Expert', depth: 14, ms: 2000 },
-  { name: 'Maximum', depth: 64, ms: 5000 },
+  { key: 'lvl1', depth: 1, ms: 60 },
+  { key: 'lvl2', depth: 3, ms: 150 },
+  { key: 'lvl3', depth: 5, ms: 400 },
+  { key: 'lvl4', depth: 8, ms: 900 },
+  { key: 'lvl5', depth: 14, ms: 2000 },
+  { key: 'lvl6', depth: 64, ms: 5000 },
 ];
 
 const $ = (id) => document.getElementById(id);
@@ -51,7 +52,7 @@ class EngineClient {
 const state = {
   startFen: START_FEN, moves: [], sans: [], fen: START_FEN, legal: [], inCheck: false,
   status: 'ongoing', human: 'w', flipped: false, last: null, selected: null,
-  thinking: false, token: 0, ready: false, evalWhite: 0, drag: null,
+  thinking: false, token: 0, ready: false, evalWhite: 0, drag: null, error: null,
 };
 let engine;
 
@@ -132,21 +133,27 @@ function renderMoves() {
   els.moves.scrollTop = els.moves.scrollHeight;
 }
 
+function renderThinking() {
+  els.thinking.textContent = t(state.thinking ? 'thinkingNow' : 'idle');
+}
+
 function renderStatus() {
   const s = els.status;
   s.className = 'status';
-  if (!state.ready) { s.textContent = 'Loading engine…'; return; }
+  renderThinking();
+  if (state.error) { s.textContent = state.error; return; }
+  if (!state.ready) { s.textContent = t('loading'); return; }
   if (isOver()) {
     const [res, ...rest] = state.status.split(' ');
     const why = rest.join(' ');
     const you = (res === '1-0' && state.human === 'w') || (res === '0-1' && state.human === 'b');
     s.classList.add('over');
-    s.textContent = `${res} — ${why}${res === '1/2-1/2' ? '' : you ? ' — you win!' : ' — Barracuda wins'}`;
+    s.textContent = `${res} — ${t('reason.' + why)}${res === '1/2-1/2' ? '' : you ? t('youWin') : t('engineWins')}`;
   } else if (state.thinking) {
-    s.textContent = 'Barracuda is thinking…';
+    s.textContent = t('engineThinking');
   } else {
     s.classList.add('you');
-    s.textContent = `Your move${state.inCheck ? ' — you are in check' : ''}`;
+    s.textContent = t('yourMove') + (state.inCheck ? t('inCheck') : '');
   }
 }
 
@@ -181,7 +188,7 @@ async function newGame() {
   state.flipped = side === 'b';
   state.startFen = START_FEN;
   state.moves = []; state.sans = []; state.last = null; state.selected = null; state.evalWhite = 0;
-  els.pv.innerHTML = '&nbsp;'; els.depth.textContent = '-'; els.nps.textContent = '-'; els.thinking.textContent = 'idle';
+  els.pv.innerHTML = '&nbsp;'; els.depth.textContent = '-'; els.nps.textContent = '-'; renderThinking();
   // clear the old game right away instead of after the engine round-trips
   state.fen = START_FEN; state.legal = []; state.status = 'ongoing'; state.inCheck = false;
   render();
@@ -207,19 +214,20 @@ async function maybeEngineMove() {
   const token = ++state.token;
   const lvl = LEVELS[+els.level.value];
   state.thinking = true;
-  els.thinking.textContent = 'thinking…';
+  renderThinking();
   renderStatus();
   let res;
   try {
     res = await engine.call('search', state.startFen, movesStr(), lvl.ms, lvl.depth);
   } catch (err) {
     state.thinking = false;
-    els.status.textContent = 'Engine error: ' + err.message;
+    state.error = t('engineError') + err.message;
+    renderStatus();
     return;
   }
   if (token !== state.token) return; // cancelled (new game / undo)
   state.thinking = false;
-  els.thinking.textContent = 'idle';
+  renderThinking();
   const [best, score] = res.split(' ');
   if (best === 'none') { await refresh(); render(); return; }
   state.evalWhite = Number(score);
@@ -230,7 +238,7 @@ async function undo() {
   if (!state.ready || !state.moves.length) return;
   state.token++; // drop any running search
   state.thinking = false;
-  els.thinking.textContent = 'idle';
+  renderThinking();
   // go back to the last position where it was the human's turn
   do {
     state.moves.pop();
@@ -265,12 +273,12 @@ function tryMove(from, to) {
 function askPromotion(cands) {
   const white = state.human === 'w';
   els.promoBox.innerHTML = '';
-  for (const t of ['q', 'r', 'b', 'n']) {
-    const uci = cands.find((m) => m.endsWith(t));
+  for (const type of ['q', 'r', 'b', 'n']) {
+    const uci = cands.find((m) => m.endsWith(type));
     if (!uci) continue;
     const btn = document.createElement('button');
-    btn.setAttribute('aria-label', 'Promote to ' + t);
-    btn.innerHTML = pieceSvg(white ? t.toUpperCase() : t);
+    btn.setAttribute('aria-label', t('promote') + ' ' + ({ q: 'Q', r: 'R', b: 'B', n: 'N' })[type]);
+    btn.innerHTML = pieceSvg(white ? type.toUpperCase() : type);
     btn.onclick = () => { els.promo.hidden = true; playMove(uci, false); };
     els.promoBox.appendChild(btn);
   }
@@ -326,8 +334,9 @@ function startDrag(e, from, piece) {
 }
 
 // ---------------------------------------------------------------- boot
-function fillLevels() {
-  els.level.innerHTML = LEVELS.map((l, i) => `<option value="${i}">${l.name}</option>`).join('');
+function fillLevels(selected) {
+  els.level.innerHTML = LEVELS.map((l, i) => `<option value="${i}">${t(l.key)}</option>`).join('');
+  if (selected != null) { els.level.value = selected; return; }
   let saved = {};
   try { saved = JSON.parse(localStorage.getItem('barracuda-settings') || '{}'); } catch (_) { /* storage unavailable */ }
   els.level.value = saved.level != null && LEVELS[saved.level] ? saved.level : 3;
@@ -337,18 +346,35 @@ function saveSettings() {
   try { localStorage.setItem('barracuda-settings', JSON.stringify({ level: +els.level.value, color: els.color.value })); } catch (_) { /* ignore */ }
 }
 
-function showManifest(m, nnueActive) {
-  $('netEval').textContent = nnueActive ? 'NNUE (neural network)' : 'Classical (hand-crafted)';
-  $('netTrained').textContent = m && m.epochs ? `${m.epochs} epochs, ${(m.samples / 1e6).toFixed(1)}M samples` : 'not yet';
+let netInfo = { manifest: null, nnue: false };
+function renderNet() {
+  const { manifest: m, nnue } = netInfo;
+  $('netEval').textContent = t(nnue ? 'netNnue' : 'netClassic');
+  $('netTrained').textContent = m && m.epochs ? t('trainedFmt', { epochs: m.epochs, m: (m.samples / 1e6).toFixed(1) }) : t('notYet');
   const elo = m ? `${m.elo}${m.elo_error ? ' ± ' + m.elo_error : ''}` : '-';
-  $('netElo').textContent = m ? `~${elo} Elo` : '-';
+  $('netElo').textContent = m ? t('eloFmt', { elo }) : '-';
   $('netElo').title = m ? m.elo_basis : '';
-  $('netUpdated').textContent = m ? new Date(m.updated).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '-';
+  const locale = getLang() === 'ar' ? 'ar-u-nu-latn' : undefined; // keep Western digits in Arabic
+  $('netUpdated').textContent = m ? new Date(m.updated).toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric' }) : '-';
   $('eloBadge').textContent = m ? `Elo ~${m.elo}` : 'Elo --';
+}
+function showManifest(m, nnueActive) { netInfo = { manifest: m, nnue: nnueActive }; renderNet(); }
+
+function changeLanguage(next) {
+  setLang(next);
+  fillLevels(+els.level.value);
+  renderNet();
+  render();
+  $('langBtn').textContent = t('langButton');
+  $('langBtn').lang = next === 'ar' ? 'en' : 'ar';
 }
 
 async function boot() {
+  initLang();
   fillLevels();
+  $('langBtn').textContent = t('langButton');
+  $('langBtn').lang = getLang() === 'ar' ? 'en' : 'ar';
+  $('langBtn').onclick = () => changeLanguage(getLang() === 'ar' ? 'en' : 'ar');
   render();
   engine = new EngineClient();
   engine.onInfo = (m) => {
@@ -375,7 +401,8 @@ async function boot() {
   try {
     info = await engine.init(net, !!net);
   } catch (err) {
-    els.status.textContent = 'Could not start the engine: ' + err.message;
+    state.error = t('startError') + err.message;
+    renderStatus();
     return;
   }
   showManifest(manifest, info.nnue);

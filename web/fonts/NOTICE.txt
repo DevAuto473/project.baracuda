@@ -1,0 +1,11 @@
+Fonts used by the Barracuda website
+===================================
+
+IBM Plex Sans Arabic (Arabic text)
+  Copyright 2019 IBM Corp. Licensed under the SIL Open Font License 1.1 (see IBM-Plex-OFL.txt).
+  Files: ibm-plex-sans-arabic-*.woff2 (from the @fontsource/ibm-plex-sans-arabic npm package).
+
+Roca Two Bold (English text)
+  File: RocaTwo-Bold.ttf, supplied by the project owner.
+  Check that your licence for Roca Two allows embedding it on a public website (web-font use) before
+  publishing. If it does not, remove this file: the page falls back to Georgia / a serif system font.

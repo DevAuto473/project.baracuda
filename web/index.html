@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Barracuda - play the engine</title>
+  <link rel="preload" href="fonts/RocaTwo-Bold.ttf" as="font" type="font/ttf" crossorigin>
   <meta name="description" content="Play chess against Barracuda, a C++ engine with a self-trained NNUE, running entirely in your browser.">
   <link rel="stylesheet" href="css/style.css">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23000'/%3E%3Cpath d='M20 70 L50 20 L80 70 Z' fill='%239646ff'/%3E%3C/svg%3E">
@@ -11,62 +12,63 @@
 <body>
   <header class="top">
     <div class="brand">BARRACUDA</div>
-    <div class="tag">C++20 chess engine &middot; self-trained NNUE &middot; runs in your browser</div>
-    <div class="elo-badge" id="eloBadge" title="Estimated strength of the published network">Elo --</div>
+    <div class="tag" data-i18n="tag">C++20 chess engine &middot; self-trained NNUE &middot; runs in your browser</div>
+    <button id="langBtn" class="lang-btn" type="button" lang="ar">العربية</button>
+    <div class="elo-badge" id="eloBadge" data-i18n-title="eloTitle" title="Estimated strength of the published network">Elo --</div>
   </header>
 
   <main class="layout">
     <section class="board-col">
       <div class="board-wrap">
-        <div class="evalbar" id="evalbar" title="Evaluation (White's point of view)">
+        <div class="evalbar" id="evalbar" data-i18n-title="evalTitle" title="Evaluation (White's point of view)">
           <div class="evalbar-white" id="evalWhite"></div>
           <span class="evalbar-label" id="evalLabel">0.0</span>
         </div>
-        <div class="board" id="board" role="application" aria-label="Chess board"></div>
+        <div class="board" id="board" role="application" aria-label="Chess board" data-i18n-label="boardLabel"></div>
       </div>
       <div class="status" id="status">Loading engine&hellip;</div>
     </section>
 
     <aside class="side">
       <div class="panel">
-        <h2>Game</h2>
+        <h2 data-i18n="game">Game</h2>
         <div class="row">
-          <label for="level">Strength</label>
+          <label for="level" data-i18n="level">Strength</label>
           <select id="level"></select>
         </div>
         <div class="row">
-          <label for="color">You play</label>
+          <label for="color" data-i18n="youPlay">You play</label>
           <select id="color">
-            <option value="w">White</option>
-            <option value="b">Black</option>
-            <option value="r">Random</option>
+            <option value="w" data-i18n="white">White</option>
+            <option value="b" data-i18n="black">Black</option>
+            <option value="r" data-i18n="random">Random</option>
           </select>
         </div>
         <div class="buttons">
-          <button id="newGame" class="primary">New game</button>
-          <button id="undo">Undo</button>
-          <button id="flip">Flip</button>
+          <button id="newGame" class="primary" data-i18n="newGame">New game</button>
+          <button id="undo" data-i18n="undo">Undo</button>
+          <button id="flip" data-i18n="flip">Flip</button>
         </div>
       </div>
 
       <div class="panel">
-        <h2>Engine</h2>
-        <div class="kv"><span>Thinking</span><b id="thinking">idle</b></div>
-        <div class="kv"><span>Depth</span><b id="depth">-</b></div>
-        <div class="kv"><span>Speed</span><b id="nps">-</b></div>
+        <h2 data-i18n="engine">Engine</h2>
+        <div class="kv"><span data-i18n="thinking">Thinking</span><b id="thinking">idle</b></div>
+        <div class="kv"><span data-i18n="depth">Depth</span><b id="depth">-</b></div>
+        <div class="kv"><span data-i18n="speed">Speed</span><b id="nps">-</b></div>
         <div class="pv" id="pv">&nbsp;</div>
       </div>
 
       <div class="panel">
-        <h2>Network</h2>
-        <div class="kv"><span>Evaluation</span><b id="netEval">-</b></div>
-        <div class="kv"><span>Trained</span><b id="netTrained">-</b></div>
-        <div class="kv"><span>Strength</span><b id="netElo">-</b></div>
-        <div class="kv"><span>Updated</span><b id="netUpdated">-</b></div>
+        <h2 data-i18n="network">Network</h2>
+        <div class="kv"><span data-i18n="evaluation">Evaluation</span><b id="netEval">-</b></div>
+        <div class="kv"><span data-i18n="trained">Trained</span><b id="netTrained">-</b></div>
+        <div class="kv"><span data-i18n="netStrength">Strength</span><b id="netElo">-</b></div>
+        <div class="kv"><span data-i18n="updated">Updated</span><b id="netUpdated">-</b></div>
       </div>
 
       <div class="panel moves-panel">
-        <h2>Moves</h2>
+        <h2 data-i18n="moves">Moves</h2>
         <ol class="moves" id="moves"></ol>
       </div>
     </aside>
@@ -76,7 +78,7 @@
     <div class="promo-box" id="promoBox"></div>
   </div>
 
-  <footer>Runs entirely in your browser with WebAssembly &mdash; no server, no account. Engine source on GitHub.</footer>
+  <footer data-i18n="footer">Runs entirely in your browser with WebAssembly &mdash; no server, no account. Engine source on GitHub.</footer>
   <script type="module" src="js/app.js"></script>
 </body>
 </html>
