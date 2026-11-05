@@ -1,6 +1,6 @@
 {
-  "version": 1793895972,
-  "updated": "2026-11-05T16:26:12Z",
+  "version": 1793898271,
+  "updated": "2026-11-05T17:04:31Z",
   "eval": "classical",
   "net": "barracuda.bnn",
   "human": "human.mdl",
@@ -9,5 +9,5 @@
   "elo": 2201,
   "elo_error": 0,
   "elo_basis": "tactical-suite estimate of the classical evaluator",
-  "match": {"games": 100, "wins": 27, "draws": 10, "losses": 63}
+  "match": {"games": 100, "wins": 23, "draws": 10, "losses": 67}
 }
