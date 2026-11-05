@@ -35,6 +35,9 @@ jobs:
       - name: Smoke-test the WebAssembly engine
         run: node web/test/wasm_test.mjs
 
+      - name: Check the stylesheet
+        run: node web/test/css_check.mjs
+
       - name: Assemble the site
         run: |
           mkdir _site

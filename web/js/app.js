@@ -16,6 +16,12 @@ const LEVELS = [
   { key: 'lvl6', depth: 64, ms: 5000, minMs: 0 },
 ];
 
+// ---- no right-click menu and no text selection (remove this block, and the user-select rule in
+// style.css, to bring them back). This only stops casual copying: the page source stays readable.
+document.addEventListener('contextmenu', (e) => e.preventDefault());
+document.addEventListener('selectstart', (e) => e.preventDefault());
+document.addEventListener('dragstart', (e) => e.preventDefault());
+
 const $ = (id) => document.getElementById(id);
 const els = {
   board: $('board'), status: $('status'), level: $('level'), color: $('color'), moves: $('moves'),

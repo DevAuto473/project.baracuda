@@ -355,4 +355,8 @@ cat selfplay.txt human.txt > all.txt
 ```
 `import-games` replays every game, skips the opening, and labels each quiet position with the engine's evaluation and the game's result. It accepts the CSV export or JSON lines and ignores corrupt records.
 
+**Right-click and text selection are disabled** on the website (`contextmenu`/`selectstart` handlers at the top of `web/js/app.js`, and the `user-select: none` rule at the end of `web/css/style.css`). This only stops casual copying; the page source stays readable in the browser. Delete those two pieces to bring both back.
+
+**Stylesheet check.** `node web/test/css_check.mjs` fails on an unbalanced brace in `web/css/style.css` (the deploy workflow runs it): browsers silently drop the rules after such a mistake.
+
 **Languages and fonts.** The page is available in English and Arabic (button in the header, remembered per browser, and picked automatically from the browser language on first visit). Arabic switches the layout to right-to-left while the chess board itself is never mirrored. English text is set in Roca Two Bold and Arabic in IBM Plex Sans Arabic, both self-hosted in `web/fonts/` (see `web/fonts/NOTICE.txt` for licences; confirm that your Roca Two licence allows web embedding before publishing).
