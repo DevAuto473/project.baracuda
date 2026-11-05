@@ -224,7 +224,7 @@ void eval_bar(ImDrawList* dl, ImVec2 min, ImVec2 max, Value score_white, bool fl
     else share = 1.0f / (1.0f + std::exp(-float(score_white) / 300.0f));
     share = std::clamp(share, 0.03f, 0.97f);
     const float h = max.y - min.y;
-    dl->AddRectFilled(min, max, palette::rgba(34, 37, 44), 4.0f);
+    dl->AddRectFilled(min, max, palette::rgba(26, 26, 26), 4.0f);
     const float split = flipped ? min.y + h * share : max.y - h * share;
     if (!flipped) dl->AddRectFilled(ImVec2(min.x, split), max, palette::kWhitePiece, 4.0f, ImDrawFlags_RoundCornersBottom);
     else dl->AddRectFilled(min, ImVec2(max.x, split), palette::kWhitePiece, 4.0f, ImDrawFlags_RoundCornersTop);

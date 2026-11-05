@@ -267,8 +267,8 @@ void BoardPanel::draw_board(ImVec2 o, float size, const runtime::BoardSnapshot& 
             if (m.from() != selected_) continue;
             const ImVec2 a = square_min(o, sq, m.to());
             const ImVec2 mid(a.x + sq * 0.5f, a.y + sq * 0.5f);
-            if (b.board[m.to()] != NO_PIECE) dl->AddCircle(mid, sq * 0.44f, palette::rgba(15, 23, 42, 110), 40, sq * 0.07f);
-            else dl->AddCircleFilled(mid, sq * 0.15f, palette::rgba(15, 23, 42, 95), 24);
+            if (b.board[m.to()] != NO_PIECE) dl->AddCircle(mid, sq * 0.44f, palette::rgba(0, 122, 204, 190), 40, sq * 0.07f);
+            else dl->AddCircleFilled(mid, sq * 0.15f, palette::rgba(0, 122, 204, 170), 24);
         }
     }
 
@@ -321,8 +321,8 @@ void BoardPanel::draw_header() {
     const bool play = app_.mode == ViewMode::Play;
     auto seg = [&](const char* label, bool active) {
         if (active) {
-            ImGui::PushStyleColor(ImGuiCol_Button, palette::to_vec4(palette::rgba(14, 116, 144)));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, palette::to_vec4(palette::rgba(14, 116, 144)));
+            ImGui::PushStyleColor(ImGuiCol_Button, palette::to_vec4(palette::kAccentBlue));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, palette::to_vec4(palette::kAccentBlue));
         }
         const bool clicked = ImGui::Button(label);
         if (active) ImGui::PopStyleColor(2);

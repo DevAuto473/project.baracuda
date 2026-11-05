@@ -12,11 +12,11 @@ namespace barracuda::gui {
 
 namespace {
 constexpr ImU32 kLayerColors[nnue::NetworkView::kLayers] = {
-    palette::rgba(148, 163, 184), // input
-    palette::rgba(56, 189, 248),  // FT
-    palette::rgba(129, 140, 248), // L1
-    palette::rgba(192, 132, 252), // L2
-    palette::rgba(52, 211, 153),  // output
+    palette::rgba(200, 200, 200), // input
+    palette::rgba(0, 229, 255),   // FT (cyan)
+    palette::rgba(90, 150, 255),  // L1
+    palette::rgba(232, 121, 249), // L2 (magenta)
+    palette::rgba(63, 230, 140),  // output
 };
 } // namespace
 
@@ -80,7 +80,8 @@ void NetworkPanel::draw() {
     const bool hovered_canvas = ImGui::IsItemHovered();
     ImDrawList* dl = ImGui::GetWindowDrawList();
     dl->PushClipRect(p0, ImVec2(p0.x + size.x, p0.y + size.y), true);
-    dl->AddRectFilled(p0, ImVec2(p0.x + size.x, p0.y + size.y), palette::rgba(16, 19, 24), 6.0f);
+    dl->AddRectFilled(p0, ImVec2(p0.x + size.x, p0.y + size.y), palette::rgba(0, 0, 0), 6.0f);
+    dl->AddRect(p0, ImVec2(p0.x + size.x, p0.y + size.y), palette::kBorder, 6.0f);
 
     const int L = nnue::NetworkView::kLayers;
     const float label_w = show_labels_ ? 54.0f : 10.0f;
@@ -138,7 +139,10 @@ void NetworkPanel::draw() {
                 if (hover_l >= 0 && !touches) t *= 0.25f;
                 if (t < edge_threshold_ && !touches) continue;
                 const float a = std::clamp(std::pow(t, 1.4f) * 0.9f + (touches ? 0.15f : 0.0f), 0.0f, 1.0f);
-                const ImU32 col = palette::with_alpha(wt >= 0 ? palette::kAccent : palette::kNegative, a);
+                const ImU32 base = wt >= 0 ? palette::kAccent : palette::kAccent2; // cyan + / magenta -
+                const ImU32 col = palette::with_alpha(base, a);
+                if (t > 0.45f) // soft glow under the strongest connections
+                    dl->AddLine(pos[std::size_t(k)][s], pos[std::size_t(k + 1)][d], palette::with_alpha(base, a * 0.16f), 4.0f + 3.0f * t);
                 dl->AddLine(pos[std::size_t(k)][s], pos[std::size_t(k + 1)][d], col, 0.6f + 1.8f * t);
             }
         }
@@ -151,7 +155,7 @@ void NetworkPanel::draw() {
         const float r = l == L - 1 ? radius * 2.2f : radius;
         for (std::size_t i = 0; i < pos[std::size_t(l)].size(); ++i) {
             const float a = std::clamp(i < act.size() ? act[i] : 0.0f, 0.0f, 1.0f);
-            const ImU32 fill = palette::lerp(palette::rgba(30, 35, 44), kLayerColors[l], a);
+            const ImU32 fill = palette::lerp(palette::rgba(8, 8, 8), kLayerColors[l], a);
             const ImVec2 c = pos[std::size_t(l)][i];
             if (a > 0.6f) dl->AddCircleFilled(c, r * 1.9f, palette::with_alpha(kLayerColors[l], 0.10f * a), 20);
             dl->AddCircleFilled(c, r, fill, 20);

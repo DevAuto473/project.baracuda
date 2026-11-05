@@ -9,27 +9,29 @@ namespace palette {
 inline constexpr ImU32 rgba(int r, int g, int b, int a = 255) {
     return ImU32(r) | (ImU32(g) << 8) | (ImU32(b) << 16) | (ImU32(a) << 24);
 }
-inline constexpr ImU32 kBackground = rgba(14, 16, 20);
-inline constexpr ImU32 kPanel = rgba(20, 23, 29);
-inline constexpr ImU32 kPanelAlt = rgba(26, 30, 37);
-inline constexpr ImU32 kBorder = rgba(42, 47, 57);
-inline constexpr ImU32 kGrid = rgba(38, 43, 52);
-inline constexpr ImU32 kText = rgba(222, 226, 233);
-inline constexpr ImU32 kTextDim = rgba(128, 136, 150);
-inline constexpr ImU32 kAccent = rgba(56, 189, 248);    // cyan
-inline constexpr ImU32 kAccent2 = rgba(167, 139, 250);  // violet
-inline constexpr ImU32 kPositive = rgba(52, 211, 153);  // green
-inline constexpr ImU32 kNegative = rgba(251, 113, 133); // rose
-inline constexpr ImU32 kWarning = rgba(251, 191, 36);   // amber
-inline constexpr ImU32 kLightSquare = rgba(173, 184, 196);
-inline constexpr ImU32 kDarkSquare = rgba(92, 109, 128);
-inline constexpr ImU32 kLastMove = rgba(250, 204, 21, 90);
-inline constexpr ImU32 kSelected = rgba(56, 189, 248, 120);
-inline constexpr ImU32 kCheck = rgba(239, 68, 68, 170);
-inline constexpr ImU32 kWhitePiece = rgba(244, 241, 234);
-inline constexpr ImU32 kWhitePieceEdge = rgba(28, 30, 34);
-inline constexpr ImU32 kBlackPiece = rgba(30, 33, 39);
-inline constexpr ImU32 kBlackPieceEdge = rgba(205, 210, 220);
+// VS Code "OLED / high-contrast pitch black" palette
+inline constexpr ImU32 kBackground = rgba(0, 0, 0);          // #000000
+inline constexpr ImU32 kPanel = rgba(5, 5, 5);               // #050505 child panels
+inline constexpr ImU32 kPanelAlt = rgba(13, 13, 13);         // #0D0D0D tiles / charts / frames
+inline constexpr ImU32 kBorder = rgba(30, 30, 30);           // #1E1E1E
+inline constexpr ImU32 kGrid = rgba(30, 30, 30);
+inline constexpr ImU32 kText = rgba(224, 224, 224);          // #E0E0E0
+inline constexpr ImU32 kTextDim = rgba(110, 118, 129);       // #6E7681
+inline constexpr ImU32 kAccent = rgba(0, 229, 255);          // cyan
+inline constexpr ImU32 kAccentBlue = rgba(0, 122, 204);      // #007ACC VS Code blue
+inline constexpr ImU32 kAccent2 = rgba(232, 121, 249);       // magenta
+inline constexpr ImU32 kPositive = rgba(63, 230, 140);
+inline constexpr ImU32 kNegative = rgba(255, 85, 115);
+inline constexpr ImU32 kWarning = rgba(255, 193, 7);
+inline constexpr ImU32 kLightSquare = rgba(218, 218, 218);   // bone / light silver
+inline constexpr ImU32 kDarkSquare = rgba(32, 32, 32);       // matte charcoal
+inline constexpr ImU32 kLastMove = rgba(255, 193, 7, 80);    // subtle amber
+inline constexpr ImU32 kSelected = rgba(0, 255, 255, 51);    // #00FFFF33
+inline constexpr ImU32 kCheck = rgba(255, 40, 40, 190);
+inline constexpr ImU32 kWhitePiece = rgba(250, 248, 242);
+inline constexpr ImU32 kWhitePieceEdge = rgba(15, 15, 15);
+inline constexpr ImU32 kBlackPiece = rgba(10, 10, 10);
+inline constexpr ImU32 kBlackPieceEdge = rgba(215, 215, 215);
 
 inline ImVec4 to_vec4(ImU32 c) { return ImGui::ColorConvertU32ToFloat4(c); }
 inline ImU32 with_alpha(ImU32 c, float a) {

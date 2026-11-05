@@ -15,7 +15,7 @@ ImU32 level_color(runtime::LogLevel l) {
     switch (l) {
     case runtime::LogLevel::Search: return palette::kAccent;
     case runtime::LogLevel::Train: return palette::kAccent2;
-    case runtime::LogLevel::Bench: return palette::rgba(125, 211, 252);
+    case runtime::LogLevel::Bench: return palette::rgba(86, 196, 255);
     case runtime::LogLevel::Warn: return palette::kWarning;
     case runtime::LogLevel::Error: return palette::kNegative;
     case runtime::LogLevel::Success: return palette::kPositive;
@@ -66,6 +66,8 @@ void ConsolePanel::draw() {
     if (ImGui::SmallButton("clear")) lines_.clear();
 
     const float input_h = ImGui::GetFrameHeightWithSpacing() + 4.0f;
+    // integrated-terminal look: pure black, mono font
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, palette::to_vec4(palette::kBackground));
     ImGui::BeginChild("##log", ImVec2(0, -input_h), ImGuiChildFlags_None, ImGuiWindowFlags_HorizontalScrollbar);
     ImGui::PushFont(app_.fonts.mono);
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4, 1));
@@ -87,6 +89,7 @@ void ConsolePanel::draw() {
         scroll_to_bottom_ = false;
     }
     ImGui::EndChild();
+    ImGui::PopStyleColor();
 
     ImGui::SetNextItemWidth(-1);
     ImGui::PushFont(app_.fonts.mono);
