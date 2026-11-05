@@ -85,16 +85,16 @@ Fonts setup_theme(float dpi) {
     s.ScrollbarSize = 10;
     s.GrabMinSize = 8;
     s.WindowBorderSize = 0;
-    s.ChildBorderSize = 1;
+    s.ChildBorderSize = 1.5f;
     s.FrameBorderSize = 0;
-    s.PopupBorderSize = 1;
+    s.PopupBorderSize = 1.5f;
     s.WindowRounding = 0;
-    s.ChildRounding = 8;
-    s.FrameRounding = 5;
-    s.PopupRounding = 6;
-    s.ScrollbarRounding = 6;
-    s.GrabRounding = 4;
-    s.TabRounding = 5;
+    s.ChildRounding = 0;
+    s.FrameRounding = 0;
+    s.PopupRounding = 0;
+    s.ScrollbarRounding = 0;
+    s.GrabRounding = 0;
+    s.TabRounding = 0;
     s.SeparatorTextBorderSize = 1;
 
     using namespace palette;
@@ -105,7 +105,7 @@ Fonts setup_theme(float dpi) {
     c[ImGuiCol_WindowBg] = to_vec4(kBackground);             // #000000
     c[ImGuiCol_ChildBg] = to_vec4(kPanel);                   // #050505
     c[ImGuiCol_PopupBg] = to_vec4(rgba(8, 8, 8));            // #080808
-    c[ImGuiCol_Border] = to_vec4(kBorder);                   // #1E1E1E
+    c[ImGuiCol_Border] = to_vec4(kBorder);                   // purple
     c[ImGuiCol_BorderShadow] = ImVec4(0, 0, 0, 0);
     c[ImGuiCol_FrameBg] = rgb(13);                           // #0D0D0D
     c[ImGuiCol_FrameBgHovered] = rgb(26);                    // #1A1A1A
@@ -133,10 +133,10 @@ Fonts setup_theme(float dpi) {
     c[ImGuiCol_Tab] = rgb(13);                               // inactive #0D0D0D
     c[ImGuiCol_TabHovered] = rgb(30);
     c[ImGuiCol_TabSelected] = to_vec4(kBackground);          // active #000000
-    c[ImGuiCol_TabSelectedOverline] = to_vec4(kAccentBlue);  // top border highlight
+    c[ImGuiCol_TabSelectedOverline] = to_vec4(kBorder);  // top border highlight
     c[ImGuiCol_TabDimmed] = rgb(13);
     c[ImGuiCol_TabDimmedSelected] = to_vec4(kBackground);
-    c[ImGuiCol_TabDimmedSelectedOverline] = to_vec4(kAccentBlue);
+    c[ImGuiCol_TabDimmedSelectedOverline] = to_vec4(kBorder);
     c[ImGuiCol_PlotLines] = to_vec4(kAccent);
     c[ImGuiCol_PlotHistogram] = to_vec4(kAccent);
     c[ImGuiCol_TableHeaderBg] = rgb(13);

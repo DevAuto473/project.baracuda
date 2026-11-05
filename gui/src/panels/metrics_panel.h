@@ -20,11 +20,13 @@ private:
     void draw_overview();
     void draw_training();
     void draw_benchmark();
+    void draw_match();
 
     App& app_;
     runtime::SelfPlayParams sp_;
     runtime::TrainParams tp_;
     runtime::BenchParams bp_;
+    runtime::MatchParams mp_;
     char sp_out_[256];
     char tp_data_[256];
     char tp_out_[256];

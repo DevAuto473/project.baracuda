@@ -122,7 +122,7 @@ Put the dependency sources in `third_party/glfw` and `third_party/imgui` (for ex
 |---|---|
 | **Board** (left) | **Play vs Barracuda**: drag or click to move, with legal-move hints, promotion picker, eval bar, chess clocks (1+0 up to 15+10, or fixed engine time), undo, swap sides and move list. **Observe Training**: the self-play game currently being generated, with an optional watch delay. |
 | **NNUE Architecture** (top right) | A node-link graph of `inputs → feature transformer → L1 → L2 → output`. Node brightness is the ClippedReLU activation. Edge colour is the weight sign (cyan +, rose −), and edge brightness is \|w·a\| or \|w\|. Hover a node to highlight its connections. During training the graph refreshes about once a second from the live weights. |
-| **Metrics** (bottom middle) | Estimated Elo and its history, search stats (depth, NPS, nodes, score, PV), training stats, the loss curve and per-epoch train/val loss. The **Training** tab holds the self-play, training and network-file controls; the **Benchmark** tab runs WAC/STS-style EPD suites. |
+| **Metrics** (bottom middle) | Barracuda's **Elo** (also shown in the top bar) and its history, search stats (depth, NPS, nodes, score, PV), training stats, the loss curve and per-epoch train/val loss. The **Training** tab holds the self-play, training and network-file controls; the **Elo Match** tab plays the network against the classical evaluator and reports Elo with a 95% margin; the **Benchmark** tab runs WAC/STS-style EPD suites. |
 | **Console** (bottom right) | A live log of epochs, losses, search depth, NPS and PV, and benchmark results, with a filter and a command line (`help`). |
 
 **Quick start loop** (all inside the GUI):
@@ -141,6 +141,7 @@ On startup the dashboard loads `barracuda.bnn` from the working directory if one
 ./build/bin/barracuda-cli selfplay --games 2000 --depth 7 --threads 8 --out selfplay.txt
 ./build/bin/barracuda-cli train --data selfplay.txt --epochs 15 --out barracuda.bnn
 ./build/bin/barracuda-cli suite --movetime 1000             # built-in WAC subset + Elo estimate
+./build/bin/barracuda-cli match --games 100 --movetime 100   # NNUE vs classical: Elo +/- margin
 ./build/bin/barracuda-cli suite --file wac.epd --movetime 500 --net barracuda.bnn
 ```
 
@@ -295,7 +296,7 @@ Checks run while developing this repository (Ubuntu 24.04, GCC 13.3 and Clang 18
 
 ## 9. Known limitations
 
-- **The Elo figure is an estimate.** It is a logit fit of the solve rate on a 28-position tactical subset. It is useful for tracking trends during training, not as a rating. For real strength numbers, play matches with `barracuda-cli` in Cute Chess or fastchess.
+- **How the Elo is computed.** The *Elo Match* plays the network against Barracuda's own classical evaluator in colour-swapped games, which is a real measurement with a 95% margin (it needs 100+ games to get under about ±60). The headline number adds that to an anchor for the classical evaluator taken from the 28-position tactical suite, and that anchor is only a heuristic. Treat the result as a trend indicator rather than an official rating; for that, play matches against other engines with `barracuda-cli` in Cute Chess or fastchess.
 - **No network weights are shipped.** You bootstrap one with self-play from the classical eval. A network trained on only a few thousand positions is much weaker than the classical eval, which is why *Auto* mode waits until the net has seen 1M samples.
 - The search is single-threaded (no Lazy SMP yet), and the engine supports standard chess only (no Chess960).
 - The GUI uses OpenGL 3.3 core. Very old GPU drivers, or VMs without 3D acceleration, may need Mesa's software renderer (`LIBGL_ALWAYS_SOFTWARE=1`).

@@ -144,7 +144,7 @@ struct SuiteRow {
     Value score = 0;
 };
 
-enum class TrainingTask : std::uint8_t { Idle, SelfPlay, LoadingData, Training, Benchmark };
+enum class TrainingTask : std::uint8_t { Idle, SelfPlay, LoadingData, Training, Benchmark, Match };
 
 struct TrainingSnapshot {
     TrainingTask task = TrainingTask::Idle;
@@ -172,6 +172,15 @@ struct TrainingSnapshot {
     int bench_solved = 0, bench_total = 0, bench_done = 0;
     int bench_movetime = 0;
     std::vector<SuiteRow> bench_rows;
+
+    // Elo match (network vs classical evaluator)
+    bool match_valid = false;
+    int match_done = 0, match_total = 0, match_w = 0, match_d = 0, match_l = 0;
+    double match_elo = 0.0;    // advantage over the classical evaluator
+    double match_err = 0.0;    // 95% half-width
+    double match_anchor = 0.0; // tactical-suite estimate of the classical evaluator
+    double match_abs = 0.0;    // anchor + match_elo
+    std::vector<float> match_history;
 
     // network
     std::uint32_t net_epochs = 0;

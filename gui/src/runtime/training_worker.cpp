@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <filesystem>
 
+#include "barracuda/engine/match.h"
 #include "barracuda/engine/notation.h"
 #include "barracuda/engine/selfplay.h"
 #include "barracuda/engine/suite.h"
@@ -70,6 +71,7 @@ void TrainingWorker::push(Command c) {
 void TrainingWorker::start_selfplay(const SelfPlayParams& p) { push(p); }
 void TrainingWorker::start_training(const TrainParams& p) { push(p); }
 void TrainingWorker::start_benchmark(const BenchParams& p) { push(p); }
+void TrainingWorker::start_match(const MatchParams& p) { push(p); }
 void TrainingWorker::save_network(const std::string& path) { push(Save{path}); }
 void TrainingWorker::load_network(const std::string& path) { push(Load{path}); }
 void TrainingWorker::reset_network() { push(Reset{}); }
@@ -103,6 +105,8 @@ void TrainingWorker::run() {
             do_train(*tp);
         } else if (auto* bp = std::get_if<BenchParams>(&cmd)) {
             do_benchmark(*bp, false);
+        } else if (auto* mp = std::get_if<MatchParams>(&cmd)) {
+            do_match(*mp);
         } else if (auto* s = std::get_if<Save>(&cmd)) {
             std::string err;
             if (master_.save(s->path, &err)) {
@@ -316,7 +320,7 @@ void TrainingWorker::do_train(const TrainParams& p) {
             if (p.bench_each_epoch && !stop_.load()) {
                 BenchParams bp;
                 bp.movetime_ms = p.bench_movetime;
-                do_benchmark(bp, true, /*force_nnue=*/true);
+                do_benchmark(bp, true, int(EvalMode::NNUE));
                 state_.task = TrainingTask::Training;
                 state_.status = "training";
             }
@@ -326,8 +330,93 @@ void TrainingWorker::do_train(const TrainParams& p) {
     else log_.logf(LogLevel::Success, "training complete: %s (%u total epochs)", p.output.c_str(), master_.epochs_trained);
 }
 
+// ----------------------------------------------------------------------------- Elo match
+// The current network (forced NNUE) plays colour-swapped games against the classical evaluator.
+// The classical evaluator is anchored with the tactical-suite estimate, so the headline number is
+// anchor + match Elo. The match part is a real measurement; the anchor is the heuristic part.
+void TrainingWorker::do_match(const MatchParams& p) {
+    const auto net = nets_.get();
+    state_.task = TrainingTask::Match;
+    state_.status = "calibrating classical anchor";
+    state_.progress = 0.0f;
+    state_.match_valid = false;
+    state_.match_done = 0;
+    state_.match_total = p.games;
+    state_.match_w = state_.match_d = state_.match_l = 0;
+    state_.match_elo = state_.match_err = state_.match_abs = 0.0;
+    state_.match_history.clear();
+    publish_stats(true);
+
+    if (!net || !net->is_trained())
+        log_.log(LogLevel::Warn, "the network is untrained - expect a very low match result (train it first)");
+
+    search_.set_network(nullptr);
+    search_.set_eval_mode(EvalMode::CLASSICAL);
+    const SuiteResult cal = run_suite(search_, builtin_wac_suite(), 150, stop_);
+    if (stop_.load()) return;
+    state_.match_anchor = cal.elo_estimate;
+    log_.logf(LogLevel::Bench, "anchor: classical evaluator solves %d/%d -> ~%.0f Elo (tactical estimate)", cal.solved,
+              cal.total, cal.elo_estimate);
+
+    Search a(16), b(16);
+    a.set_network(net);
+    a.set_eval_mode(EvalMode::NNUE);
+    b.set_network(nullptr);
+    b.set_eval_mode(EvalMode::CLASSICAL);
+
+    MatchConfig cfg;
+    cfg.games = p.games;
+    cfg.movetime_ms = p.movetime_ms;
+    state_.status = "match: Barracuda NNUE vs classical";
+    log_.logf(LogLevel::Bench, "match: %d games at %d ms/move (NNUE vs classical)", p.games, p.movetime_ms);
+    publish_stats(true);
+
+    std::uint64_t serial = 0;
+    ObservationSnapshot last;
+    MatchCallbacks cb;
+    cb.on_move = [&](const Position& pos, Move, Value score_white, int game, int ply) {
+        ObservationSnapshot& o = observation.write_buffer();
+        o.active = true;
+        o.board.set(pos);
+        o.score_white = score_white;
+        o.game = game + 1;
+        o.ply = ply;
+        o.serial = ++serial;
+        last = o;
+        observation.publish();
+        for (int waited = 0; waited < observe_delay_ms.load() && !stop_.load(); waited += 10)
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    };
+    cb.on_game_end = [&](const MatchStats& st, const std::string& desc) {
+        state_.match_done = st.games_done;
+        state_.match_w = st.wins;
+        state_.match_d = st.draws;
+        state_.match_l = st.losses;
+        state_.match_elo = st.elo.elo;
+        state_.match_err = st.elo.error;
+        state_.match_abs = state_.match_anchor + st.elo.elo;
+        state_.match_valid = true;
+        state_.progress = float(st.games_done) / float(std::max(1, p.games));
+        state_.match_history.push_back(float(state_.match_abs));
+        log_.logf(LogLevel::Bench, "game %d/%d: %s   (+%d =%d -%d)  Elo %.0f +/- %.0f", st.games_done, p.games,
+                  desc.c_str(), st.wins, st.draws, st.losses, state_.match_abs, st.elo.error);
+        publish_stats(true);
+    };
+    MatchStats st;
+    run_match(a, b, cfg, stop_, cb, &st);
+    last.active = false;
+    last.serial = ++serial;
+    observation.publish(last);
+
+    if (st.games_done > 0)
+        log_.logf(LogLevel::Success, "match finished: +%d =%d -%d  ->  Barracuda ~%.0f Elo (+/- %.0f vs classical %.0f)",
+                  st.wins, st.draws, st.losses, state_.match_abs, st.elo.error, state_.match_anchor);
+    else
+        log_.log(LogLevel::Warn, "match stopped before the first game finished");
+}
+
 // ----------------------------------------------------------------------------- benchmark
-float TrainingWorker::do_benchmark(const BenchParams& p, bool quiet, bool force_nnue) {
+float TrainingWorker::do_benchmark(const BenchParams& p, bool quiet, int force_mode) {
     std::vector<SuitePosition> suite;
     if (!p.epd_file.empty()) {
         std::string err;
@@ -353,7 +442,7 @@ float TrainingWorker::do_benchmark(const BenchParams& p, bool quiet, bool force_
 
     search_.set_network(nets_.get());
     // per-epoch benchmarks measure the network being trained, whatever the play setting is
-    search_.set_eval_mode(force_nnue ? EvalMode::NNUE : EvalMode(eval_mode_.load()));
+    search_.set_eval_mode(force_mode >= 0 ? EvalMode(force_mode) : EvalMode(eval_mode_.load()));
     if (!quiet)
         log_.logf(LogLevel::Bench, "benchmark: %zu positions @ %d ms (%s eval)", suite.size(), p.movetime_ms,
                   search_.nnue_active() ? "NNUE" : "classical");

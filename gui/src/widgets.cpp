@@ -124,7 +124,7 @@ void line_chart(const char* id, const std::vector<ChartSeries>& series, ImVec2 s
     const bool hovered = ImGui::IsItemHovered();
     ImDrawList* dl = ImGui::GetWindowDrawList();
     const ImVec2 p1(p0.x + size.x, p0.y + size.y);
-    dl->AddRectFilled(p0, p1, palette::kPanelAlt, 6.0f);
+    dl->AddRectFilled(p0, p1, palette::kPanelAlt);
 
     float lo = 1e30f, hi = -1e30f;
     std::size_t longest = 0;
@@ -224,10 +224,10 @@ void eval_bar(ImDrawList* dl, ImVec2 min, ImVec2 max, Value score_white, bool fl
     else share = 1.0f / (1.0f + std::exp(-float(score_white) / 300.0f));
     share = std::clamp(share, 0.03f, 0.97f);
     const float h = max.y - min.y;
-    dl->AddRectFilled(min, max, palette::rgba(26, 26, 26), 4.0f);
+    dl->AddRectFilled(min, max, palette::rgba(26, 26, 26));
     const float split = flipped ? min.y + h * share : max.y - h * share;
-    if (!flipped) dl->AddRectFilled(ImVec2(min.x, split), max, palette::kWhitePiece, 4.0f, ImDrawFlags_RoundCornersBottom);
-    else dl->AddRectFilled(min, ImVec2(max.x, split), palette::kWhitePiece, 4.0f, ImDrawFlags_RoundCornersTop);
+    if (!flipped) dl->AddRectFilled(ImVec2(min.x, split), max, palette::kWhitePiece);
+    else dl->AddRectFilled(min, ImVec2(max.x, split), palette::kWhitePiece);
     dl->AddLine(ImVec2(min.x, (min.y + max.y) * 0.5f), ImVec2(max.x, (min.y + max.y) * 0.5f), palette::with_alpha(palette::kAccent, 0.6f));
 
     char buf[16];
@@ -245,7 +245,7 @@ void stat_tile(const char* label, const std::string& value, float width, ImU32 v
     ImGui::BeginGroup();
     const ImVec2 p = ImGui::GetCursorScreenPos();
     const float h = ImGui::GetTextLineHeight() * 2.6f;
-    ImGui::GetWindowDrawList()->AddRectFilled(p, ImVec2(p.x + width, p.y + h), palette::kPanelAlt, 6.0f);
+    ImGui::GetWindowDrawList()->AddRectFilled(p, ImVec2(p.x + width, p.y + h), palette::kPanelAlt);
     ImGui::SetCursorScreenPos(ImVec2(p.x + 8, p.y + 4));
     ImGui::TextColored(palette::to_vec4(palette::kTextDim), "%s", label);
     ImGui::SetCursorScreenPos(ImVec2(p.x + 8, p.y + 4 + ImGui::GetTextLineHeight() * 1.15f));

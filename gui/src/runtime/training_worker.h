@@ -37,6 +37,11 @@ struct TrainParams {
     int bench_movetime = 150;
 };
 
+struct MatchParams {
+    int games = 40;
+    int movetime_ms = 100;
+};
+
 struct BenchParams {
     std::string epd_file; // empty = built-in WAC subset
     int movetime_ms = 300;
@@ -50,6 +55,7 @@ public:
     void start_selfplay(const SelfPlayParams& p);
     void start_training(const TrainParams& p);
     void start_benchmark(const BenchParams& p);
+    void start_match(const MatchParams& p);
     void save_network(const std::string& path);
     void load_network(const std::string& path);
     void reset_network();
@@ -67,7 +73,7 @@ private:
     struct Load { std::string path; };
     struct Reset {};
     struct Quit {};
-    using Command = std::variant<SelfPlayParams, TrainParams, BenchParams, Save, Load, Reset, Quit>;
+    using Command = std::variant<SelfPlayParams, TrainParams, BenchParams, MatchParams, Save, Load, Reset, Quit>;
 
     void run();
     void push(Command c);
@@ -77,7 +83,8 @@ private:
 
     void do_selfplay(const SelfPlayParams& p);
     void do_train(const TrainParams& p);
-    float do_benchmark(const BenchParams& p, bool quiet, bool force_nnue = false);
+    float do_benchmark(const BenchParams& p, bool quiet, int force_mode = -1);
+    void do_match(const MatchParams& p);
 
     Logger& log_;
     NetworkRegistry& nets_;

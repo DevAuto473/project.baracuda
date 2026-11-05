@@ -66,7 +66,7 @@ void App::execute_command(const std::string& line) {
     if (cmd == "help") {
         log.log(runtime::LogLevel::Info, "commands: help | clear | newgame | undo | flip | fen <FEN> | moves |"
                                          " play | observe | stop | bench [ms] | selfplay <games> [depth] |"
-                                         " train [dataset] | save [file] | load [file] | eval <auto|classical|nnue> | watch <ms>");
+                                         " match [games] [ms] | train [dataset] | save [file] | load [file] | eval <auto|classical|nnue> | watch <ms>");
     } else if (cmd == "newgame") {
         mode = ViewMode::Play;
         board_->new_game();
@@ -95,6 +95,14 @@ void App::execute_command(const std::string& line) {
         runtime::BenchParams p;
         if (!rest.empty()) p.movetime_ms = std::max(10, std::atoi(rest.c_str()));
         training->start_benchmark(p);
+    } else if (cmd == "match") {
+        runtime::MatchParams p;
+        std::istringstream a(rest);
+        a >> p.games >> p.movetime_ms;
+        p.games = std::clamp(p.games, 2, 1000);
+        p.movetime_ms = std::clamp(p.movetime_ms, 10, 5000);
+        training->start_match(p);
+        mode = ViewMode::Observe;
     } else if (cmd == "selfplay") {
         runtime::SelfPlayParams p;
         std::istringstream a(rest);
@@ -142,6 +150,10 @@ void App::draw_top_bar(float height) {
     const auto net = nets.get();
     const auto& si = search_info();
     const auto& ts = training_stats();
+    char elo[48];
+    if (ts.match_valid) std::snprintf(elo, sizeof(elo), "Elo %.0f +/- %.0f", ts.match_abs, ts.match_err);
+    else if (!ts.elo_history.empty()) std::snprintf(elo, sizeof(elo), "Elo ~%.0f", double(ts.last_elo));
+    else std::snprintf(elo, sizeof(elo), "Elo --");
     char right[256];
     std::snprintf(right, sizeof(right), "search: %s   trainer: %s   net: %s   %.0f FPS",
                   si.thinking ? "thinking" : "idle",
@@ -149,6 +161,10 @@ void App::draw_top_bar(float height) {
                   net && net->is_trained() ? "trained" : "untrained", fps_smoothed_);
     const ImVec2 rs = ImGui::CalcTextSize(right);
     dl->AddText(ImVec2(p.x + w - rs.x - 4, p.y + (height - ImGui::GetFontSize()) * 0.5f), palette::kTextDim, right);
+    const ImVec2 es = ImGui::CalcTextSize(elo);
+    dl->AddText(fonts.title, fonts.title->FontSize,
+                ImVec2(p.x + w - rs.x - es.x * 1.25f - 28, p.y + (height - fonts.title->FontSize) * 0.5f),
+                palette::kAccent, elo);
     dl->AddLine(ImVec2(p.x, p.y + height - 1), ImVec2(p.x + w, p.y + height - 1), palette::kBorder);
     ImGui::Dummy(ImVec2(w, height));
 }

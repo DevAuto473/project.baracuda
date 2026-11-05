@@ -80,8 +80,8 @@ void NetworkPanel::draw() {
     const bool hovered_canvas = ImGui::IsItemHovered();
     ImDrawList* dl = ImGui::GetWindowDrawList();
     dl->PushClipRect(p0, ImVec2(p0.x + size.x, p0.y + size.y), true);
-    dl->AddRectFilled(p0, ImVec2(p0.x + size.x, p0.y + size.y), palette::rgba(0, 0, 0), 6.0f);
-    dl->AddRect(p0, ImVec2(p0.x + size.x, p0.y + size.y), palette::kBorder, 6.0f);
+    dl->AddRectFilled(p0, ImVec2(p0.x + size.x, p0.y + size.y), palette::rgba(0, 0, 0));
+    dl->AddRect(p0, ImVec2(p0.x + size.x, p0.y + size.y), palette::kBorder);
 
     const int L = nnue::NetworkView::kLayers;
     const float label_w = show_labels_ ? 54.0f : 10.0f;

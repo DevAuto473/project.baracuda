@@ -11,6 +11,7 @@
 #include <thread>
 #include <vector>
 
+#include "barracuda/engine/match.h"
 #include "barracuda/engine/movegen.h"
 #include "barracuda/engine/notation.h"
 #include "barracuda/engine/search.h"
@@ -257,6 +258,33 @@ int cmd_train(const Args& a) {
     return 0;
 }
 
+int cmd_match(const Args& a, std::shared_ptr<const nnue::Network> net) {
+    if (!net) {
+        std::cerr << "match: no network loaded (use --net file.bnn or place barracuda.bnn next to the binary)\n";
+        return 1;
+    }
+    MatchConfig cfg;
+    cfg.games = int(a.num("games", 40));
+    cfg.movetime_ms = int(a.num("movetime", 100));
+    cfg.seed = std::uint64_t(a.num("seed", 0));
+    Search nn(16), classical(16);
+    nn.set_network(net);
+    nn.set_eval_mode(EvalMode::NNUE);
+    classical.set_eval_mode(EvalMode::CLASSICAL);
+    std::printf("NNUE vs classical: %d games at %d ms/move\n", cfg.games, cfg.movetime_ms);
+    MatchCallbacks cb;
+    cb.on_game_end = [](const MatchStats& st, const std::string& d) {
+        std::printf("game %3d  %s   +%d =%d -%d  Elo %+.0f +/- %.0f\n", st.games_done, d.c_str(), st.wins, st.draws,
+                    st.losses, st.elo.elo, st.elo.error);
+        std::fflush(stdout);
+    };
+    MatchStats st;
+    run_match(nn, classical, cfg, g_stop, cb, &st);
+    std::printf("\nresult: +%d =%d -%d  score %.1f%%  ->  NNUE is %+.0f +/- %.0f Elo vs classical\n", st.wins, st.draws,
+                st.losses, st.elo.score * 100.0, st.elo.elo, st.elo.error);
+    return 0;
+}
+
 int cmd_suite(const Args& a, std::shared_ptr<const nnue::Network> net) {
     std::vector<SuitePosition> suite;
     if (a.has("file")) {
@@ -429,7 +457,8 @@ void usage() {
         "  barracuda-cli selfplay --games N --depth D [--nodes N] [--threads T] [--out selfplay.txt]\n"
         "  barracuda-cli train --data selfplay.txt [--out barracuda.bnn] [--net init.bnn] [--epochs N]\n"
         "                      [--batch N] [--lr X] [--lambda X] [--threads N] [--max-samples N]\n"
-        "  barracuda-cli suite [--file wac.epd] [--movetime ms]   tactical suite + Elo estimate\n\n"
+        "  barracuda-cli suite [--file wac.epd] [--movetime ms]   tactical suite + Elo estimate\n"
+        "  barracuda-cli match [--games N] [--movetime ms] [--net f.bnn]   NNUE vs classical, Elo +/- margin\n\n"
         "  Global: --net <file.bnn> (default: ./barracuda.bnn if present)  --classical\n",
         kVersion);
 }
@@ -465,6 +494,7 @@ int main(int argc, char** argv) {
     if (sub == "selfplay") return cmd_selfplay(args, net);
     if (sub == "train") return cmd_train(args);
     if (sub == "suite") return cmd_suite(args, net);
+    if (sub == "match") return cmd_match(args, net);
     usage();
     return sub == "help" || sub == "-h" ? 0 : 1;
 }

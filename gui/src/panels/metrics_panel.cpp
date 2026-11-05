@@ -22,6 +22,7 @@ const char* task_name(runtime::TrainingTask t) {
     case runtime::TrainingTask::LoadingData: return "Parsing dataset";
     case runtime::TrainingTask::Training: return "Training";
     case runtime::TrainingTask::Benchmark: return "Benchmark";
+    case runtime::TrainingTask::Match: return "Elo match";
     default: return "Idle";
     }
 }
@@ -59,6 +60,10 @@ void MetricsPanel::draw() {
             draw_training();
             ImGui::EndTabItem();
         }
+        if (ImGui::BeginTabItem("Elo Match")) {
+            draw_match();
+            ImGui::EndTabItem();
+        }
         if (ImGui::BeginTabItem("Benchmark")) {
             draw_benchmark();
             ImGui::EndTabItem();
@@ -74,25 +79,29 @@ void MetricsPanel::draw_overview() {
     const float w = ImGui::GetContentRegionAvail().x;
     const float sp = ImGui::GetStyle().ItemSpacing.x;
 
-    // ---- Elo ----
+    // ---- Elo: headline is the match-based value when available, else the tactical-suite estimate ----
+    const ImVec4 dim = palette::to_vec4(palette::kTextDim);
     ImGui::BeginGroup();
-    ImGui::TextColored(palette::to_vec4(palette::kTextDim), "Estimated Elo (tactical suite)");
+    ImGui::TextColored(dim, "Barracuda Elo");
     ImGui::PushFont(app_.fonts.large);
-    if (t.elo_history.empty()) ImGui::TextColored(palette::to_vec4(palette::kTextDim), "----");
-    else ImGui::TextColored(palette::to_vec4(palette::kAccent), "%.0f", double(t.last_elo));
+    if (t.match_valid) ImGui::TextColored(palette::to_vec4(palette::kAccent), "%.0f", t.match_abs);
+    else if (!t.elo_history.empty()) ImGui::TextColored(palette::to_vec4(palette::kAccent), "~%.0f", double(t.last_elo));
+    else ImGui::TextColored(dim, "----");
     ImGui::PopFont();
-    if (t.task == runtime::TrainingTask::Benchmark)
-        ImGui::TextColored(palette::to_vec4(palette::kWarning), "running suite: %d / %d (%d solved)", t.bench_done,
-                           t.bench_total, t.bench_solved);
-    else if (t.bench_total > 0)
-        ImGui::TextColored(palette::to_vec4(palette::kTextDim), "%d / %d solved @ %d ms", t.bench_solved, t.bench_total,
-                           t.bench_movetime);
+    if (t.task == runtime::TrainingTask::Match)
+        ImGui::TextColored(palette::to_vec4(palette::kWarning), "match %d / %d", t.match_done, t.match_total);
+    else if (t.task == runtime::TrainingTask::Benchmark)
+        ImGui::TextColored(palette::to_vec4(palette::kWarning), "suite %d / %d", t.bench_done, t.bench_total);
+    else if (t.match_valid)
+        ImGui::TextColored(dim, "+/- %.0f  match, %d games", t.match_err, t.match_done);
+    else if (!t.elo_history.empty())
+        ImGui::TextColored(dim, "tactical estimate");
     else
-        ImGui::TextColored(palette::to_vec4(palette::kTextDim), "run a benchmark to start tracking");
+        ImGui::TextColored(dim, "run the Elo Match tab");
     ImGui::EndGroup();
     ImGui::SameLine(0, 16);
-    line_chart("elo", {{&t.elo_history, palette::kAccent, "Elo"}}, ImVec2(w - ImGui::GetItemRectSize().x - 16, 92.0f),
-               "%.0f", false, "no benchmark yet");
+    line_chart("elo", {{&t.match_history, palette::kAccent2, "match"}, {&t.elo_history, palette::kAccent, "suite"}},
+               ImVec2(w - ImGui::GetItemRectSize().x - 16, 92.0f), "%.0f", false, "no Elo data yet");
 
     // ---- search ----
     section("Search");
@@ -246,6 +255,56 @@ void MetricsPanel::draw_training() {
     ImGui::EndDisabled();
     ImGui::TextColored(palette::to_vec4(palette::kTextDim), "active: %s (%u epochs)", t.net_path.empty() ? "<in memory>" : t.net_path.c_str(),
                        t.net_epochs);
+    ImGui::EndChild();
+}
+
+void MetricsPanel::draw_match() {
+    auto* tw = app_.training.get();
+    const auto& t = app_.training_stats();
+    const bool busy = tw->busy();
+    const ImVec4 dim = palette::to_vec4(palette::kTextDim);
+    ImGui::BeginChild("##match", ImVec2(0, 0), ImGuiChildFlags_None);
+    const float w = ImGui::GetContentRegionAvail().x;
+
+    ImGui::TextColored(dim, "Barracuda (NNUE) plays colour-swapped games against its own classical evaluator.");
+    ImGui::TextColored(dim, "Elo = classical anchor (tactical estimate) + measured match advantage.");
+    ImGui::SetNextItemWidth(140);
+    ImGui::SliderInt("games", &mp_.games, 4, 400);
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(140);
+    ImGui::SliderInt("ms/move", &mp_.movetime_ms, 20, 1000);
+    ImGui::SameLine();
+    ImGui::BeginDisabled(busy);
+    if (ImGui::Button("Start match")) {
+        tw->start_match(mp_);
+        app_.mode = ViewMode::Observe;
+    }
+    ImGui::EndDisabled();
+    if (busy && t.task == runtime::TrainingTask::Match) {
+        ImGui::SameLine();
+        if (ImGui::Button("Stop")) tw->stop();
+        ImGui::ProgressBar(t.progress, ImVec2(w, 0), t.status.c_str());
+    }
+
+    ImGui::Spacing();
+    const float tw_ = (w - 3 * ImGui::GetStyle().ItemSpacing.x) / 4.0f;
+    char buf[64];
+    if (t.match_valid) std::snprintf(buf, sizeof(buf), "%.0f", t.match_abs);
+    else std::snprintf(buf, sizeof(buf), "--");
+    stat_tile("Barracuda Elo", buf, tw_, palette::kAccent);
+    ImGui::SameLine();
+    if (t.match_valid) std::snprintf(buf, sizeof(buf), "+/- %.0f", t.match_err);
+    stat_tile("95% margin", t.match_valid ? buf : "--", tw_);
+    ImGui::SameLine();
+    if (t.match_valid) std::snprintf(buf, sizeof(buf), "%+.0f", t.match_elo);
+    stat_tile("vs classical", t.match_valid ? buf : "--", tw_, t.match_elo >= 0 ? palette::kPositive : palette::kNegative);
+    ImGui::SameLine();
+    std::snprintf(buf, sizeof(buf), "+%d =%d -%d", t.match_w, t.match_d, t.match_l);
+    stat_tile("W / D / L", buf, tw_);
+    ImGui::TextColored(dim, "classical anchor ~%.0f Elo   games %d / %d", t.match_anchor, t.match_done, t.match_total);
+    line_chart("match_elo", {{&t.match_history, palette::kAccent2, "Elo"}}, ImVec2(w, 120.0f), "%.0f", false,
+               "Elo curve appears while the match runs");
+    ImGui::TextColored(dim, "More games = tighter margin. A margin under +/-60 needs roughly 100+ games.");
     ImGui::EndChild();
 }
 

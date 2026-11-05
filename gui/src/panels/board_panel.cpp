@@ -211,7 +211,7 @@ void BoardPanel::draw_board(ImVec2 o, float size, const runtime::BoardSnapshot& 
     const float sq = size / 8.0f;
 
     // frame
-    dl->AddRectFilled(ImVec2(o.x - 3, o.y - 3), ImVec2(o.x + size + 3, o.y + size + 3), palette::kBorder, 6.0f);
+    dl->AddRectFilled(ImVec2(o.x - 2, o.y - 2), ImVec2(o.x + size + 2, o.y + size + 2), palette::kBorder);
 
     MoveList legal;
     if (interactive && selected_ != SQ_NONE) generate_moves(game_, legal);
@@ -228,7 +228,6 @@ void BoardPanel::draw_board(ImVec2 o, float size, const runtime::BoardSnapshot& 
         if (col == 7 && row == 0) corners = ImDrawFlags_RoundCornersTopRight;
         if (col == 0 && row == 7) corners = ImDrawFlags_RoundCornersBottomLeft;
         if (col == 7 && row == 7) corners = ImDrawFlags_RoundCornersBottomRight;
-        if (corners != ImDrawFlags_RoundCornersNone) round = 5.0f;
         dl->AddRectFilled(a, c, light ? palette::kLightSquare : palette::kDarkSquare, round, corners);
 
         if (b.last_move && (sqr == b.last_move.from() || sqr == b.last_move.to()))
@@ -405,7 +404,9 @@ void BoardPanel::draw_observe_info(float width) {
     const runtime::TrainingSnapshot& t = app_.training_stats();
     const float tile_w = (width - 2 * ImGui::GetStyle().ItemSpacing.x) / 3.0f;
     if (o.active) {
-        stat_tile("Self-play game", std::to_string(o.game) + " / " + std::to_string(t.sp_games_total), tile_w);
+        const bool matching = t.task == runtime::TrainingTask::Match;
+        stat_tile(matching ? "Elo match game" : "Self-play game",
+                  std::to_string(o.game) + " / " + std::to_string(matching ? t.match_total : t.sp_games_total), tile_w);
         ImGui::SameLine();
         stat_tile("Ply", std::to_string(o.ply), tile_w);
         ImGui::SameLine();
@@ -492,7 +493,7 @@ void BoardPanel::draw() {
                 ImGui::CloseCurrentPopup();
             }
             ImGui::GetWindowDrawList()->AddRectFilled(p, ImVec2(p.x + s, p.y + s),
-                                                      ImGui::IsItemHovered() ? palette::kSelected : palette::kPanelAlt, 6.0f);
+                                                      ImGui::IsItemHovered() ? palette::kSelected : palette::kPanelAlt);
             draw_piece(ImGui::GetWindowDrawList(), make_piece(human_, pt), p, s);
             ImGui::PopID();
             ImGui::SameLine();

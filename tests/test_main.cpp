@@ -8,6 +8,7 @@
 #include <thread>
 #include <vector>
 
+#include "barracuda/engine/match.h"
 #include "barracuda/engine/movegen.h"
 #include "barracuda/engine/notation.h"
 #include "barracuda/engine/search.h"
@@ -321,6 +322,24 @@ TEST(triple_buffer_and_queue) {
         if (q.try_pop(v)) consumed += v;
     for (auto& t : producers) t.join();
     CHECK(consumed == 20000);
+}
+
+TEST(elo_and_match) {
+    CHECK(std::abs(elo_from_results(60, 0, 40).elo - 70.4) < 0.2);
+    CHECK(std::abs(elo_from_results(10, 20, 10).elo) < 1e-6);
+    CHECK(elo_from_results(60, 0, 40).error > 0 && elo_from_results(600, 0, 400).error < elo_from_results(60, 0, 40).error);
+    CHECK(elo_from_results(0, 0, 0).elo == 0.0);
+    Search a(4), b(4);
+    MatchConfig cfg;
+    cfg.games = 2;
+    cfg.movetime_ms = 15;
+    cfg.max_plies = 30;
+    cfg.random_plies = 4;
+    cfg.seed = 7;
+    std::atomic<bool> stop{false};
+    MatchStats st;
+    run_match(a, b, cfg, stop, {}, &st);
+    CHECK(st.games_done == 2 && st.wins + st.draws + st.losses == 2);
 }
 
 } // namespace
