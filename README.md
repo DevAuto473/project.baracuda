@@ -388,4 +388,12 @@ It plays the strange style against normal play and prints how many moves were un
 4. **Repeat**: train, self-play again with the new network, train again. Each round is a little more "Barracuda".
 5. **Publish** with the button. Use *force the network* only if you prefer its style even when it does not beat the classical evaluator.
 
+**Reading the opponent and finishing fast.** Three more parts of the style, all on for the website and for play in the dashboard:
+
+- **Prediction.** Before each of the player's moves Barracuda predicts two replies: the best one (from its own search) and the *natural* one, the move a person tends to play (a 2-ply search that sees captures and threats but no deep tactics). On the website the *Read you* chip counts how many of the player's moves it predicted, and a note under the board says *Barracuda saw Nf3 coming* or *Barracuda expected d4*.
+- **Traps.** A trap is a move nearly as good as the best one (at most 0.4 pawn worse, proven at full depth) after which the natural reply loses at least 1.5 pawns. How much it may risk for a trap follows an opponent model: the website remembers, in the player's browser, how often this player picked the natural move when it was not the best one, and sets traps more eagerly against players who fall for them. When a trap works, the note says *Trap!*.
+- **No draws, hunt the king.** Draws are worth -0.4 pawn to Barracuda (contempt), so it avoids repetitions and keeps playing for the win; once clearly winning it adds a bonus for driving the losing king to the edge and bringing its own king closer, which points the search at a mate rather than at more material.
+
+Measure it against a human-like opponent: `barracuda-cli trap-test --games 16 --movetime 100` (`--trap 0..100`, `--margin`, `--hunt 0|1`). In our runs Barracuda won every game; the opponent fell into about 3 of every 4 traps; games lasted 26 to 30 moves with every combination of settings, so the differences between them were within noise. That opponent loses quickly whatever happens: the traps are aimed at people, who avoid simple blunders but miss the move behind the obvious one.
+
 No engine can promise to beat every human in every game. What it does: it searches every reply before moving, never plays a strange move that a full-depth search does not justify, and never gives anything away when it is worse.
