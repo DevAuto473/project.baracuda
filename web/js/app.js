@@ -1,6 +1,6 @@
 // Barracuda web player: UI + game flow. The engine (WebAssembly) lives in engine-worker.js.
-import { pieceSvg } from './pieces.js';
-import { t, getLang, initLang, setLang } from './i18n.js';
+import { pieceSvg } from './pieces.js?v=__BUILD__';
+import { t, getLang, initLang, setLang } from './i18n.js?v=__BUILD__';
 
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 const LEVELS = [
@@ -23,7 +23,7 @@ const els = {
 // ---------------------------------------------------------------- engine client
 class EngineClient {
   constructor() {
-    this.worker = new Worker('js/engine-worker.js');
+    this.worker = new Worker('js/engine-worker.js?v=__BUILD__');
     this.pending = new Map();
     this.seq = 0;
     this.onInfo = null;

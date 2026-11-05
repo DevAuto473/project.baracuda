@@ -6,11 +6,11 @@
 
 let api = null;
 
-importScripts('../wasm-dist/barracuda.js');
+importScripts('../wasm-dist/barracuda.js?v=__BUILD__');
 
 async function init(net, useNnue) {
   const M = await createBarracuda({
-    locateFile: (f) => new URL('../wasm-dist/' + f, self.location.href).href,
+    locateFile: (f) => new URL('../wasm-dist/' + f + '?v=__BUILD__', self.location.href).href,
   });
   const w = (name, ret, args) => M.cwrap(name, ret, args);
   api = {
