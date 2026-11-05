@@ -22,7 +22,14 @@
 
 namespace barracuda {
 
-inline constexpr int kHumanFeatures = 30;
+// 30 features of how a move looks + 3 of what a two-move look-ahead shows (people see about that far)
+inline constexpr int kHumanFeatures = 33;
+
+// Score (centipawns, mover's point of view) of a move after a short search, in legal-move order.
+struct ShallowScore {
+    Move move;
+    int cp = 0;
+};
 
 struct RankedMove {
     Move move;
@@ -37,12 +44,15 @@ public:
 
     static const char* feature_name(int i);
 
-    // Features of `m` in `pos` (the position is restored before returning).
-    static void features(Position& pos, Move m, float* f);
+    // Features of `m` in `pos` (the position is restored before returning). `delta_cp` is how much
+    // worse than the best move a 2-ply look-ahead finds this move (0 = the best, negative = worse);
+    // pass nullptr when it is unknown.
+    static void features(Position& pos, Move m, float* f, const int* delta_cp = nullptr);
 
-    float logit(Position& pos, Move m) const;
-    // All legal moves with their probability, most likely first.
-    void rank(Position& pos, std::vector<RankedMove>& out) const;
+    float logit(Position& pos, Move m, const int* delta_cp = nullptr) const;
+    // All legal moves with their probability, most likely first. `look_ahead` are the 2-ply scores
+    // of the legal moves (Search::shallow_scores); without them the look-ahead features are zero.
+    void rank(Position& pos, std::vector<RankedMove>& out, const std::vector<ShallowScore>* look_ahead = nullptr) const;
 
     bool save(const std::string& path, std::string* err = nullptr) const;
     static std::shared_ptr<HumanModel> load(const std::string& path, std::string* err = nullptr);

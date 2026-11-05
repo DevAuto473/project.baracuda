@@ -537,7 +537,14 @@ TEST(human_model) {
     std::vector<RankedMove> r;
     Position start;
     start.set_fen(Position::START_FEN);
-    model.rank(start, r);
+    {
+        Search ls(1);
+        ls.set_eval_mode(EvalMode::CLASSICAL);
+        std::vector<ShallowScore> sc;
+        ls.shallow_scores(start, 2, sc);
+        CHECK(sc.size() == 20);
+        model.rank(start, r, &sc);
+    }
     float sum = 0;
     for (const RankedMove& x : r) sum += x.p;
     CHECK(r.size() == 20 && std::fabs(sum - 1.0f) < 1e-4f && r[0].p >= r[1].p);

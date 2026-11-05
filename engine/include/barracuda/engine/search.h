@@ -132,6 +132,10 @@ public:
     // (captures and threats it sees, deep tactics it does not). Used as the opponent model.
     Move predict_human(const Position& pos, int depth = 2);
 
+    // Score of every legal move after a `depth`-ply look-ahead (legal-move order, mover's point of
+    // view). This is what people can roughly see; it feeds the human model.
+    void shallow_scores(const Position& pos, int depth, std::vector<ShallowScore>& out);
+
     // How people choose moves (see human_model.h). Without one, a 2-ply search stands in for it.
     void set_human_model(std::shared_ptr<const HumanModel> m) { human_ = std::move(m); }
     bool has_human_model() const { return human_ != nullptr; }
@@ -170,6 +174,8 @@ private:
     std::uint64_t styled_moves_ = 0, style_decisions_ = 0; // stop_ was raised by the time/node limit (not by the caller)
     StyleOptions style_;
     std::shared_ptr<const HumanModel> human_;
+    std::unique_ptr<Search> look_; // classical 2-ply searcher feeding the human model
+    void human_rank(Position& pos, std::vector<RankedMove>& out);
     std::mt19937_64 style_rng_{12345};
     void apply_style(const Position& root, const MoveList& root_moves, std::int64_t full_hard_ms, SearchResult& result);
     bool try_trap(const MoveList& root_moves, SearchResult& result, bool no_risk);

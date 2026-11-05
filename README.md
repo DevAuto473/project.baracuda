@@ -431,7 +431,7 @@ No engine can promise to beat every human in every game. What it does: it search
 
 ## 12. Human mistakes: a model of how people choose moves
 
-People do not search. They play the move that *looks* right (a capture, a check, developing a piece, a recapture, saving an attacked piece) and miss what is hidden two or three moves deeper. `human_model.h` learns that preference from real games: each legal move is described by 30 cheap features (piece, capture, value taken, check, lands on an attacked square, leaves the piece hanging, escapes an attack, recapture, threat created, centrality, ...), and the probability of a move is a softmax over their weighted sum (a conditional logit trained on Lichess games). The model file `human.mdl` is about 1 KB of text, so it also runs in the browser.
+People do not search. They play the move that *looks* right (a capture, a check, developing a piece, a recapture, saving an attacked piece) and miss what is hidden two or three moves deeper. `human_model.h` learns that preference from real games: each legal move is described by 33 features: 30 cheap ones about how it looks (piece, capture, value taken, check, lands on an attacked square, leaves the piece hanging, escapes an attack, recapture, threat created, centrality, ...) and 3 about what a **2-ply look-ahead** shows (how much worse than the best move it is; people see about that far, and no further). The probability of a move is a softmax over their weighted sum (a conditional logit trained on Lichess games). The model file `human.mdl` is about 1 KB of text, so it also runs in the browser. (The first version had only the 30 look features: on 1.4 million real Lichess moves it predicted the player's move 33.1% of the time against 36.1% for a plain 2-ply guess, which is why the look-ahead features were added.)
 
 **What the search does with it.** Barracuda's traps judge a candidate move by the *chance* that the opponent falls for it: the summed probability of the likely replies (the four most probable, up to 85% of the probability) that lose at least 1.5 pawns. The most promising trap that is still sound (at most 0.4 pawn worse than the best move, proven by search) is played. Without a model, the single reply a 2-ply search prefers stands in for the person. The website also uses the model to predict the player's move (the *Read you* chip).
 
@@ -440,7 +440,7 @@ People do not search. They play the move that *looks* right (a capture, a check,
 # 1. the moves people actually played (not only the quiet ones): about 1 to 1.5 million for 50,000 games
 curl -s https://database.lichess.org/standard/lichess_db_standard_rated_2024-01.pgn.zst | zstdcat | \
   ./build/bin/barracuda-cli import-pgn --in - --games 50000 --min-elo 1200 --max-elo 1800 --moves-only 1 --moves-out human_moves.txt
-# 2. learn how they choose (a minute or two on all cores)
+# 2. learn how they choose (the first epoch also computes the 2-ply look-ahead of every position: a few minutes on all cores; the other epochs are fast)
 ./build/bin/barracuda-cli train-human --data human_moves.txt --out human.mdl
 # 3. publish it with the network
 ./build/bin/barracuda-cli publish --net barracuda.bnn --games 100 --push

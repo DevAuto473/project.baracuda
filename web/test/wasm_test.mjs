@@ -47,8 +47,8 @@ check('predicts that a human takes a hanging queen', predict('4k3/8/8/3q4/8/8/3R
 check('prediction after a move list', /^[a-h][1-8][a-h][1-8]/.test(predict(START, 'e2e4')));
 // a human model (hand-made: people like captures, checks, centre; they avoid hanging pieces)
 {
-  const w = Array(30).fill(0); w[6] = 2; w[7] = 1; w[8] = 1; w[23] = 0.8; w[12] = -1.5; w[15] = 1; w[21] = 0.8;
-  M.FS.writeFile('/h.mdl', `BRCHUMAN 1 30 100000 0.3 0.55\n${w.join(' ')}\n`);
+  const w = Array(33).fill(0); w[6] = 2; w[7] = 1; w[8] = 1; w[23] = 0.8; w[12] = -1.5; w[15] = 1; w[21] = 0.8; w[30] = 3; w[32] = 1;
+  M.FS.writeFile('/h.mdl', `BRCHUMAN 2 33 100000 0.3 0.55\n${w.join(' ')}\n`);
   check('loads a human model', f('brc_load_human', 'number', ['string'])('/h.mdl') === 1);
   M.FS.writeFile('/bad.mdl', 'nonsense');
   check('rejects a corrupt human model', f('brc_load_human', 'number', ['string'])('/bad.mdl') === 0);

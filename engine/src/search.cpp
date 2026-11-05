@@ -715,6 +715,37 @@ Move Search::shallow_best(int ply, int depth) {
     return best;
 }
 
+void Search::shallow_scores(const Position& pos, int depth, std::vector<ShallowScore>& out) {
+    out.clear();
+    stop_.store(false, std::memory_order_relaxed);
+    time_limited_ = false;
+    can_stop_ = false;
+    limits_ = SearchLimits{};
+    pos_ = pos;
+    use_nnue_ = nnue_active();
+    if (use_nnue_) acc_->reset(*net_, pos_);
+    MoveList list;
+    generate_moves(pos_, list);
+    for (Move m : list) {
+        make(m);
+        const Value v = -negamax(-VALUE_INFINITE, VALUE_INFINITE, std::max(0, depth - 1), 1, false);
+        unmake();
+        out.push_back({m, int(v)});
+    }
+}
+
+// The human model needs a look-ahead of the position; a separate classical searcher provides it, so the
+// main search's table and evaluator are untouched and the numbers match what the model was trained on.
+void Search::human_rank(Position& pos, std::vector<RankedMove>& out) {
+    if (!look_) {
+        look_ = std::make_unique<Search>(1);
+        look_->set_eval_mode(EvalMode::CLASSICAL);
+    }
+    std::vector<ShallowScore> sc;
+    look_->shallow_scores(pos, 2, sc);
+    human_->rank(pos, out, &sc);
+}
+
 Move Search::predict_human(const Position& pos, int depth) {
     stop_.store(false, std::memory_order_relaxed);
     time_limited_ = false;
@@ -723,7 +754,8 @@ Move Search::predict_human(const Position& pos, int depth) {
     pos_ = pos;
     if (human_) {
         std::vector<RankedMove> r;
-        human_->rank(pos_, r);
+        Position copy = pos;
+        human_rank(copy, r);
         return r.empty() ? Move() : r[0].move;
     }
     use_nnue_ = nnue_active();
@@ -769,7 +801,7 @@ bool Search::try_trap(const MoveList& root_moves, SearchResult& result, bool no_
         if (should_stop()) break;
         make(c.m);
         replies.clear();
-        if (human_) human_->rank(pos_, replies);
+        if (human_) { Position copy = pos_; human_rank(copy, replies); }
         else if (const Move nat = shallow_best(1, 2)) replies.push_back({nat, 1.0f});
 
         float fall = 0.0f, covered = 0.0f;

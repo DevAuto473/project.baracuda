@@ -23,7 +23,8 @@ const char* const kNames[kHumanFeatures] = {
     "piece was attacked before moving", "escapes an attack", "recapture", "wins material in a trade",
     "forward progress (pieces)", "pawn push", "pawn double push", "centrality of the target square",
     "centrality gained", "develops a minor piece", "king move (no castling)", "early queen move",
-    "creates a threat on a valuable piece", "steps next to an enemy pawn's attack", "retreat", "safe capture"};
+    "creates a threat on a valuable piece", "steps next to an enemy pawn's attack", "retreat", "safe capture",
+    "look-ahead: how much worse than the best move", "look-ahead: worse by a small amount", "look-ahead: the best move"};
 
 constexpr float kValue9[7] = {1, 3, 3, 5, 9, 0, 0}; // pawn units
 
@@ -36,7 +37,7 @@ float centrality(Square s) {
 
 const char* HumanModel::feature_name(int i) { return i >= 0 && i < kHumanFeatures ? kNames[i] : "?"; }
 
-void HumanModel::features(Position& pos, Move m, float* f) {
+void HumanModel::features(Position& pos, Move m, float* f, const int* delta_cp) {
     std::fill(f, f + kHumanFeatures, 0.0f);
     const Color us = pos.side_to_move(), them = ~us;
     const Square from = m.from(), to = m.to();
@@ -90,23 +91,37 @@ void HumanModel::features(Position& pos, Move m, float* f) {
         if (hit & pos.pieces(them, PieceType(t))) best = std::max(best, kValue9[t]);
     if (best > 0.0f && best >= kValue9[now]) f[26] = best / 9.0f;
     pos.undo_move();
+    if (delta_cp) {
+        const int d = std::min(0, *delta_cp);
+        f[30] = float(std::max(d, -600)) / 600.0f;
+        f[31] = float(std::max(d, -150)) / 150.0f;
+        f[32] = d >= -10 ? 1.0f : 0.0f;
+    }
 }
 
-float HumanModel::logit(Position& pos, Move m) const {
+float HumanModel::logit(Position& pos, Move m, const int* delta_cp) const {
     float f[kHumanFeatures];
-    features(pos, m, f);
+    features(pos, m, f, delta_cp);
     float s = 0.0f;
     for (int i = 0; i < kHumanFeatures; ++i) s += w[i] * f[i];
     return s;
 }
 
-void HumanModel::rank(Position& pos, std::vector<RankedMove>& out) const {
+void HumanModel::rank(Position& pos, std::vector<RankedMove>& out, const std::vector<ShallowScore>* look_ahead) const {
     out.clear();
     const MoveList list = legal_moves(pos);
     if (list.size == 0) return;
+    int best = -1000000;
+    if (look_ahead)
+        for (const ShallowScore& s : *look_ahead) best = std::max(best, s.cp);
     float mx = -1e30f;
     for (Move m : list) {
-        const float s = logit(pos, m);
+        int delta = 0;
+        bool known = false;
+        if (look_ahead)
+            for (const ShallowScore& s : *look_ahead)
+                if (s.move == m) { delta = s.cp - best; known = true; break; }
+        const float s = logit(pos, m, known ? &delta : nullptr);
         out.push_back({m, s});
         mx = std::max(mx, s);
     }
@@ -122,7 +137,7 @@ bool HumanModel::save(const std::string& path, std::string* err) const {
         if (err) *err = "cannot write '" + path + "'";
         return false;
     }
-    f << "BRCHUMAN 1 " << kHumanFeatures << " " << (unsigned long long)samples << " " << top1 << " " << top3 << "\n";
+    f << "BRCHUMAN 2 " << kHumanFeatures << " " << (unsigned long long)samples << " " << top1 << " " << top3 << "\n";
     for (int i = 0; i < kHumanFeatures; ++i) f << w[i] << (i + 1 < kHumanFeatures ? " " : "\n");
     return bool(f);
 }
@@ -137,7 +152,7 @@ std::shared_ptr<HumanModel> HumanModel::load(const std::string& path, std::strin
     int version = 0, n = 0;
     unsigned long long samples = 0;
     auto m = std::make_shared<HumanModel>();
-    if (!(f >> magic >> version >> n >> samples >> m->top1 >> m->top3) || magic != "BRCHUMAN" || version != 1 || n != kHumanFeatures) {
+    if (!(f >> magic >> version >> n >> samples >> m->top1 >> m->top3) || magic != "BRCHUMAN" || version != 2 || n != kHumanFeatures) {
         if (err) *err = "'" + path + "' is not a Barracuda human model";
         return nullptr;
     }
@@ -158,6 +173,7 @@ namespace {
 struct Sample {
     std::string fen;
     std::uint16_t move;
+    std::vector<std::int16_t> delta; // 2-ply look-ahead, per legal move (computed once, in the first epoch)
 };
 
 struct Grad {
@@ -168,16 +184,27 @@ struct Grad {
 };
 
 // Gradient of the negative log-likelihood (and the held-out metrics) for one sample.
-void accumulate(const HumanModel& model, Position& pos, const Sample& s, Grad& out, bool want_grad) {
+void accumulate(const HumanModel& model, Position& pos, Search& look, Sample& s, Grad& out, bool want_grad) {
     if (!pos.set_fen(s.fen)) return;
     const MoveList list = legal_moves(pos);
     if (list.size < 2) return;
+    if (s.delta.size() != std::size_t(list.size)) {
+        std::vector<ShallowScore> sc;
+        look.shallow_scores(pos, 2, sc);
+        int best = -1000000;
+        for (const ShallowScore& x : sc) best = std::max(best, x.cp);
+        s.delta.assign(std::size_t(list.size), 0);
+        for (int i = 0; i < list.size; ++i)
+            for (const ShallowScore& x : sc)
+                if (x.move == list.moves[std::size_t(i)]) { s.delta[std::size_t(i)] = std::int16_t(std::clamp(x.cp - best, -3000, 0)); break; }
+    }
     float feat[256][kHumanFeatures];
     float logit[256];
     int played = -1;
     float mx = -1e30f;
     for (int i = 0; i < list.size; ++i) {
-        HumanModel::features(pos, list.moves[std::size_t(i)], feat[i]);
+        const int d = s.delta[std::size_t(i)];
+        HumanModel::features(pos, list.moves[std::size_t(i)], feat[i], &d);
         float v = 0.0f;
         for (int k = 0; k < kHumanFeatures; ++k) v += model.w[k] * feat[i][k];
         logit[i] = v;
@@ -253,14 +280,16 @@ bool train_human_model(const std::string& data_path, HumanModel& model, const Hu
 
     double m1[kHumanFeatures] = {}, m2[kHumanFeatures] = {};
     std::uint64_t step = 0;
-    auto evaluate = [&](const std::vector<Sample>& set, Grad& total) {
+    auto evaluate = [&](std::vector<Sample>& set, Grad& total) {
         std::vector<Grad> parts(static_cast<std::size_t>(threads));
         std::vector<std::thread> pool;
         for (int t = 0; t < threads; ++t)
             pool.emplace_back([&, t] {
                 Position pos;
+                Search look(1);
+                look.set_eval_mode(EvalMode::CLASSICAL);
                 for (std::size_t i = std::size_t(t); i < set.size(); i += std::size_t(threads))
-                    accumulate(model, pos, set[i], parts[std::size_t(t)], false);
+                    accumulate(model, pos, look, set[i], parts[std::size_t(t)], false);
             });
         for (auto& th : pool) th.join();
         for (const Grad& g : parts) {
@@ -269,6 +298,12 @@ bool train_human_model(const std::string& data_path, HumanModel& model, const Hu
         }
     };
 
+    std::vector<std::unique_ptr<Search>> looks; // one classical look-ahead searcher per thread, reused across batches
+    for (int t = 0; t < threads; ++t) {
+        looks.push_back(std::make_unique<Search>(1));
+        looks.back()->set_eval_mode(EvalMode::CLASSICAL);
+    }
+    if (log) log("computing the 2-ply look-ahead of every position (first epoch only: this is the slow one) ...");
     for (int epoch = 1; epoch <= opt.epochs && !stop.load(); ++epoch) {
         std::shuffle(order.begin(), order.end(), rng);
         const float lr = opt.lr * std::pow(0.7f, float(epoch - 1));
@@ -281,8 +316,9 @@ bool train_human_model(const std::string& data_path, HumanModel& model, const Hu
             for (int t = 0; t < threads; ++t)
                 pool.emplace_back([&, t] {
                     Position pos;
+                    Search& look = *looks[std::size_t(t)];
                     for (std::size_t i = b + std::size_t(t); i < e; i += std::size_t(threads))
-                        accumulate(model, pos, train[order[i]], parts[std::size_t(t)], true);
+                        accumulate(model, pos, look, train[order[i]], parts[std::size_t(t)], true);
                 });
             for (auto& th : pool) th.join();
             Grad total;
