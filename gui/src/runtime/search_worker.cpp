@@ -83,6 +83,7 @@ void SearchWorker::do_go(const Go& g) {
         so.contempt = 30;
         so.hunt = true;
         so.aggression = 100;
+        so.adaptive = true;
         search_.set_style(so);
     }
     const Color stm = g.pos.side_to_move();
@@ -131,6 +132,8 @@ void SearchWorker::do_go(const Go& g) {
     done.pv_san = pv_to_san(g.pos, r.pv);
     info.publish(done);
 
+    if (r.defending != was_defending_) log_.logf(LogLevel::Search, "%s", r.defending ? "switching to DEFENCE mode" : "switching to ATTACK mode");
+    was_defending_ = r.defending;
     if (r.trap_reply) log_.logf(LogLevel::Search, "trap: after %s, the natural reply %s loses", r.best.to_uci().c_str(), r.trap_reply.to_uci().c_str());
     if (r.styled) log_.logf(LogLevel::Search, "strange style: played %s instead of %s", r.best.to_uci().c_str(), r.objective_best.to_uci().c_str());
 

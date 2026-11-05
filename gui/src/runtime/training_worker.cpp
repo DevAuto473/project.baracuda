@@ -174,7 +174,15 @@ void TrainingWorker::do_selfplay(const SelfPlayParams& p) {
 
     search_.set_network(nets_.get());
     search_.set_eval_mode(EvalMode(eval_mode_.load()));
-    { StyleOptions so; so.enabled = p.strange_style; search_.set_style(so); }
+    {
+        StyleOptions so; // full personality (see barracuda-cli selfplay --style)
+        so.enabled = p.strange_style;
+        so.contempt = 20;
+        so.hunt = true;
+        so.aggression = 100;
+        so.adaptive = true;
+        search_.set_style(so);
+    }
     log_.logf(LogLevel::Train, "self-play: %d games at depth %d -> %s (%s eval%s)", p.games, p.depth, p.output.c_str(),
               search_.nnue_active() ? "NNUE" : "classical", p.strange_style ? ", strange style" : "");
 

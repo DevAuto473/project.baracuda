@@ -19,7 +19,7 @@ const $ = (id) => document.getElementById(id);
 const els = {
   board: $('board'), status: $('status'), color: $('color'), moves: $('moves'),
   evalWhite: $('evalWhite'), evalLabel: $('evalLabel'), evalbar: $('evalbar'),
-  thinking: $('thinking'), depth: $('depth'), nps: $('nps'), pv: $('pv'), readYou: $('readyou'),
+  thinking: $('thinking'), depth: $('depth'), nps: $('nps'), pv: $('pv'), readYou: $('readyou'), mode: $('mode'),
   promo: $('promo'), promoBox: $('promoBox'),
 };
 
@@ -57,7 +57,7 @@ const state = {
   status: 'ongoing', human: 'w', flipped: false, last: null, selected: null,
   thinking: false, token: 0, ready: false, evalWhite: 0, drag: null, error: null,
   finished: false, thanks: null, thanksTimer: 0,
-  pred: null, noteUntil: 0, read: { hit: 0, total: 0 },
+  pred: null, noteUntil: 0, read: { hit: 0, total: 0 }, defending: null,
 };
 
 // ---------------------------------------------------------------- opponent model
@@ -73,6 +73,11 @@ const saveModel = () => { try { localStorage.setItem(MODEL_KEY, JSON.stringify(m
 // 0..100; starts at 50 and follows the player's record (Laplace-smoothed), never below 15
 const trapLevel = () => Math.max(15, Math.round(100 * (model.falls + 1) / (model.chances + 2)));
 const showNote = (text) => { els.pv.textContent = text; state.noteUntil = performance.now() + 2500; };
+function renderMode() {
+  els.mode.textContent = state.defending === null ? '-' : t(state.defending ? 'modeDefence' : 'modeAttack');
+  els.mode.classList.toggle('attack', state.defending === false);
+  els.mode.classList.toggle('defence', state.defending === true);
+}
 function renderRead() {
   els.readYou.textContent = state.read.total ? `\u2066${state.read.hit}/${state.read.total}\u2069` : '-';
 }
@@ -255,7 +260,7 @@ async function newGame() {
   state.startFen = customFen || START_FEN;
   state.moves = []; state.sans = []; state.last = null; state.selected = null; state.evalWhite = 0;
   els.pv.innerHTML = '&nbsp;'; els.depth.textContent = '-'; els.nps.textContent = '-'; renderThinking();
-  state.pred = null; state.noteUntil = 0; state.read = { hit: 0, total: 0 }; renderRead();
+  state.pred = null; state.noteUntil = 0; state.read = { hit: 0, total: 0 }; state.defending = null; renderRead(); renderMode();
   // clear the old game right away instead of after the engine round-trips
   state.fen = state.startFen; state.legal = []; state.status = 'ongoing'; state.inCheck = false;
   render();
@@ -314,8 +319,16 @@ async function maybeEngineMove() {
   } catch (_) { /* the note is optional */ }
   let trap = '';
   try { trap = await engine.call('lastTrap'); } catch (_) { /* optional */ }
+  let switched = '';
+  try {
+    const def = !!(await engine.call('lastDefending'));
+    if (state.defending !== null && def !== state.defending) switched = def ? 'toDefence' : 'toAttack';
+    state.defending = def;
+    renderMode();
+  } catch (_) { /* optional */ }
   const deep = res.split(' ')[5] || ''; // "<best> <score> <depth> <nodes> <best> <expected reply> ..."
   await playMove(best, true, strange);
+  if (switched && !strange) showNote(t(switched));
   if (token !== state.token || isOver()) return;
   // what will the human play now? (kept hidden until they move)
   let human = '';

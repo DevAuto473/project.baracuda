@@ -49,6 +49,7 @@ struct SearchResult {
     Move objective_best; // what plain search preferred (differs from `best` when the style chose another move)
     bool styled = false;
     Move trap_reply;     // set when `best` is a trap: the natural-looking reply that loses
+    bool defending = false; // adaptive style: this move was chosen in defence mode
     Move ponder;
     Value score = 0;
     int depth = 0;
@@ -83,6 +84,9 @@ struct StyleOptions {
     // Attack hunger, 0..100: the engine values its own pieces bearing on the enemy king's
     // surroundings (from the opening on), so it builds attacks instead of quiet edges.
     int aggression = 0;
+    // Switch between attack (aggression on) and defence (guard its own king, no gambles) according
+    // to how the game is going.
+    bool adaptive = false;
     std::uint64_t seed = 0;  // 0 = random
 };
 int style_margin(Value best_score);                 // allowed loss in centipawns
@@ -159,14 +163,21 @@ private:
     StyleOptions style_;
     std::mt19937_64 style_rng_{12345};
     void apply_style(const Position& root, const MoveList& root_moves, std::int64_t full_hard_ms, SearchResult& result);
-    bool try_trap(const MoveList& root_moves, SearchResult& result);
+    bool try_trap(const MoveList& root_moves, SearchResult& result, bool no_risk);
     Move shallow_best(int ply, int depth);
     Value hunt_bonus(Value v) const;
     Value aggression_bonus() const;
     Color root_color_ = WHITE;
+    bool defending_ = false;
+    bool defending_by_[COLOR_NB] = {false, false};
+    Value last_score_[COLOR_NB] = {0, 0};
+  public:
+    bool defending() const { return defending_; }
+  private:
     Value draw_value(int ply) const {
         // ply 0 is the engine to move: a draw costs it `contempt`, and gains the opponent as much
-        return style_.enabled ? Value((ply & 1) ? style_.contempt : -style_.contempt) : VALUE_DRAW;
+        const int c = defending_ ? 0 : style_.contempt; // when defending, a draw is welcome
+        return style_.enabled ? Value((ply & 1) ? c : -c) : VALUE_DRAW;
     }
 
     std::uint64_t nodes_ = 0;

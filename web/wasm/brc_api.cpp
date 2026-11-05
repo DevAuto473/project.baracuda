@@ -40,6 +40,7 @@ std::string g_view_json;
 bool g_last_styled = false;
 std::string g_last_objective;
 std::string g_last_trap;
+bool g_last_defending = false;
 std::unique_ptr<Search> g_predictor; // separate small search: predicting never disturbs the main hash table
 StyleOptions g_style;
 nnue::NetworkView g_view;
@@ -150,10 +151,13 @@ BRC_EXPORT void brc_set_opponent(int trap, int contempt) {
     g_style.contempt = std::clamp(contempt, 0, 200);
     g_style.hunt = true;
     g_style.aggression = 100; // hungry for the enemy king
+    g_style.adaptive = true;   // ... and digs in when the game turns against it
     search().set_style(g_style);
 }
 // After brc_search: the natural-looking reply the move sets a trap for ("" when it is no trap).
 BRC_EXPORT const char* brc_last_trap() { return g_last_trap.c_str(); }
+// After brc_search: 1 when the move was chosen in defence mode, 0 in attack mode.
+BRC_EXPORT int brc_last_defending() { return g_last_defending ? 1 : 0; }
 // The move a human would most likely play after `moves` (UCI, "" when there is none).
 BRC_EXPORT const char* brc_predict(const char* fen, const char* moves) {
     Position pos;
@@ -162,6 +166,7 @@ BRC_EXPORT const char* brc_predict(const char* fen, const char* moves) {
         g_predictor = std::make_unique<Search>(1);
         g_predictor->set_eval_mode(EvalMode::CLASSICAL);
     }
+    // (the predictor never uses the style: it models the opponent, not Barracuda)
     const Move m = g_predictor->predict_human(pos, 2);
     g_out = m ? m.to_uci() : std::string();
     return g_out.c_str();
@@ -263,6 +268,7 @@ BRC_EXPORT const char* brc_search(const char* fen, const char* moves, int moveti
     g_last_styled = r.styled;
     g_last_objective = r.objective_best ? r.objective_best.to_uci() : std::string();
     g_last_trap = r.trap_reply ? r.trap_reply.to_uci() : std::string();
+    g_last_defending = r.defending;
     int score = stm == WHITE ? r.score : -r.score;
     if (is_mate_score(r.score)) score = score > 0 ? 30000 : -30000;
     std::string pv;

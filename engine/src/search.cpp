@@ -72,6 +72,9 @@ void Search::set_hash_mb(std::size_t mb) { tt_.resize(mb); }
 
 void Search::new_game() {
     tt_.clear();
+    defending_ = false;
+    defending_by_[WHITE] = defending_by_[BLACK] = false;
+    last_score_[WHITE] = last_score_[BLACK] = 0;
     std::fill(&killers_[0][0], &killers_[0][0] + sizeof(killers_) / sizeof(Move), Move());
     std::fill(&history_[0][0][0], &history_[0][0][0] + sizeof(history_) / sizeof(int), 0);
 }
@@ -110,7 +113,7 @@ bool Search::should_stop() {
 Value Search::evaluate_node() {
     Value v = use_nnue_ ? net_->evaluate(acc_->current(), pos_.side_to_move()) : eval::classical(pos_);
     if (style_.enabled && style_.hunt) v = hunt_bonus(v);
-    if (style_.enabled && style_.aggression > 0) v += aggression_bonus();
+    if (style_.enabled && (style_.aggression > 0 || defending_)) v += aggression_bonus();
     // fade towards a draw as the 50-move counter grows
     v = v * (200 - pos_.rule50()) / 200;
     return std::clamp(v, VALUE_MATED_IN_MAX_PLY + 1, VALUE_MATE_IN_MAX_PLY - 1);
@@ -132,25 +135,33 @@ Value Search::hunt_bonus(Value v) const {
     return Value(v + (winner == stm ? bonus : -bonus));
 }
 
-// Attack hunger: how many squares around the enemy king the engine's pieces hit (queen and rooks
-// count more), from the side to move's point of view. Only the engine's own attacks are rewarded:
-// the opponent is not credited the same way, which makes the engine optimistic about attacking.
-Value Search::aggression_bonus() const {
-    const Color us = root_color_, them = ~us;
-    const Square ksq = pos_.king_square(them);
+// Pressure that `attacker`'s pieces put on the other king: squares of the king's surroundings hit,
+// queens and rooks counting more, and several attackers together far more than one.
+static int king_pressure(const Position& pos, Color attacker) {
+    const Square ksq = pos.king_square(~attacker);
     const Bitboard zone = attacks::king(ksq) | square_bb(ksq);
-    const Bitboard occ = pos_.pieces();
+    const Bitboard occ = pos.pieces();
     static constexpr int kWeight[PIECE_TYPE_NB] = {0, 2, 2, 3, 5, 0}; // P N B R Q K
     int units = 0, attackers = 0;
     for (PieceType pt : {KNIGHT, BISHOP, ROOK, QUEEN}) {
-        Bitboard b = pos_.pieces(us, pt);
+        Bitboard b = pos.pieces(attacker, pt);
         while (b) {
             const int n = popcount(attacks::piece(pt, pop_lsb(b), occ) & zone);
             if (n) units += n * kWeight[pt], ++attackers;
         }
     }
-    // several attackers together are far more dangerous than one
-    const int bonus = std::min(160, units * (2 + attackers) * std::clamp(style_.aggression, 0, 100) / 100);
+    return units * (2 + attackers);
+}
+
+// Attack mode: the engine is rewarded for its own pressure on the enemy king (the opponent is not
+// credited the same way, so it is optimistic about attacking). Defence mode: it is instead
+// penalised for the opponent's pressure on its own king, and digs in until the danger has passed.
+// Returned from the side to move's point of view.
+Value Search::aggression_bonus() const {
+    const Color us = root_color_;
+    int bonus;
+    if (defending_) bonus = -std::min(160, king_pressure(pos_, ~us));
+    else bonus = std::min(160, king_pressure(pos_, us) * std::clamp(style_.aggression, 0, 150) / 100);
     return Value(pos_.side_to_move() == us ? bonus : -bonus);
 }
 
@@ -443,6 +454,18 @@ SearchResult Search::go(const Position& root, const SearchLimits& limits, const 
     limits_ = limits;
     pos_ = root;
     root_color_ = root.side_to_move();
+    // attack / defence switch, with hysteresis so it does not flicker: the last search's verdict
+    // decides. In defence the engine stops gambling: no contempt-driven risks, no strange moves.
+    // (kept per colour: self-play uses one search for both sides)
+    if (style_.enabled && style_.adaptive) {
+        bool& d = defending_by_[root_color_];
+        const Value last = last_score_[root_color_];
+        if (!d && last < -60) d = true;
+        else if (d && last > -10) d = false;
+        defending_ = d;
+    } else {
+        defending_ = false;
+    }
     nodes_ = 0;
     can_stop_ = false;
     time_up_ = false;
@@ -556,6 +579,8 @@ SearchResult Search::go(const Position& root, const SearchLimits& limits, const 
     }
 
     result.objective_best = result.best;
+    last_score_[root_color_] = result.score;
+    result.defending = defending_;
     if (style_.enabled && !limits.infinite) {
         apply_style(root_copy, root_moves, full_hard_ms, result);
         ++style_decisions_;
@@ -619,7 +644,7 @@ void Search::apply_style(const Position& root, const MoveList& root_moves, std::
     // the caller asked us to stop: play what we have
     if (stop_.load(std::memory_order_relaxed) && !time_up_) return;
     if (!result.best || root_moves.size < 2 || is_mate_score(result.score) || result.depth < 2) return;
-    if (result.score < -40) return; // in trouble: only the best move will do
+    const bool worse = result.score < -40; // in trouble: no strange moves, only risk-free traps
 
     // resume with the time the main search left unused
     hard_ms_ = full_hard_ms;
@@ -629,11 +654,11 @@ void Search::apply_style(const Position& root, const MoveList& root_moves, std::
     pos_ = root;
     if (use_nnue_) acc_->reset(*net_, pos_);
 
-    if (style_.trap > 0 && try_trap(root_moves, result)) {
+    if (style_.trap > 0 && try_trap(root_moves, result, worse || defending_)) {
         stop_.store(false, std::memory_order_relaxed);
         return;
     }
-    if (should_stop()) { stop_.store(false, std::memory_order_relaxed); return; }
+    if (worse || should_stop()) { stop_.store(false, std::memory_order_relaxed); return; }
 
     const int margin = style_margin(result.score) * style_.margin_percent / 100;
     if (margin <= 0) return;
@@ -706,8 +731,9 @@ Move Search::predict_human(const Position& pos, int depth) {
 // (0..100) sets how much evaluation may be risked for it: against a player who keeps falling for
 // such replies the engine sets traps eagerly, against a careful one it rarely bothers.
 // pos_ is the root on entry and on exit.
-bool Search::try_trap(const MoveList& root_moves, SearchResult& result) {
-    const int risk = std::clamp(style_.trap, 0, 100) * 40 / 100; // up to 0.4 pawn
+bool Search::try_trap(const MoveList& root_moves, SearchResult& result, bool no_risk) {
+    // counter-traps while defending risk nothing: only moves as good as the best one
+    const int risk = no_risk ? 0 : std::clamp(style_.trap, 0, 100) * 40 / 100; // up to 0.4 pawn
     const Value gain = 150;                                        // the natural reply must lose at least this much
     const Value sound = result.score - risk;
     const Value punish = result.score + gain;

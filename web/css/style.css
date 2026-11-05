@@ -240,3 +240,7 @@ html[lang="ar"] .brand { letter-spacing: 0; }  /* letter-spacing would break Ara
 /* no text selection or long-press menu (see the matching block at the top of js/app.js) */
 body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
 img, svg, canvas { -webkit-user-drag: none; }
+
+/* attack / defence mode chip */
+#mode.attack { color: #ff4d6d; }
+#mode.defence { color: #4dabff; }

@@ -14,7 +14,7 @@ SOURCES=(
   web/wasm/brc_api.cpp
 )
 
-EXPORTS='["_brc_init","_brc_load_net","_brc_last_message","_brc_set_eval","_brc_simd","_brc_legal_moves","_brc_fen","_brc_status","_brc_in_check","_brc_net_view","_brc_has_net","_brc_set_style","_brc_last_styled","_brc_last_objective","_brc_set_opponent","_brc_last_trap","_brc_predict","_brc_san","_brc_static_eval","_brc_new_game","_brc_search","_malloc","_free"]'
+EXPORTS='["_brc_init","_brc_load_net","_brc_last_message","_brc_set_eval","_brc_simd","_brc_legal_moves","_brc_fen","_brc_status","_brc_in_check","_brc_net_view","_brc_has_net","_brc_set_style","_brc_last_styled","_brc_last_objective","_brc_set_opponent","_brc_last_trap","_brc_last_defending","_brc_predict","_brc_san","_brc_static_eval","_brc_new_game","_brc_search","_malloc","_free"]'
 
 # -msimd128 + -msse4.1 enables the SSE4.1 NNUE kernels (mapped to WASM SIMD by Emscripten).
 # Pass SIMD=0 to build the scalar kernels for very old browsers.

@@ -180,7 +180,17 @@ int cmd_selfplay(const Args& a, std::shared_ptr<const nnue::Network> net) {
         else c.seed = std::uint64_t(std::chrono::steady_clock::now().time_since_epoch().count()) + std::uint64_t(id) * 7919;
         Search search(16);
         search.set_network(net);
-        if (a.has("style")) { StyleOptions so; so.enabled = true; search.set_style(so); }
+        if (a.has("style")) {
+            // Barracuda's full personality: strange moves, no draws, king hunt, attack hunger,
+            // switching to defence when the game turns (traps need a human opponent: off here)
+            StyleOptions so;
+            so.enabled = true;
+            so.contempt = 20;
+            so.hunt = true;
+            so.aggression = 100;
+            so.adaptive = true;
+            search.set_style(so);
+        }
         SelfPlayCallbacks cb;
         cb.on_game_end = [&](const SelfPlayStats& st, const std::string& res) {
             std::lock_guard<std::mutex> lk(io);
@@ -467,6 +477,7 @@ int cmd_style_test(const Args& a, std::shared_ptr<const nnue::Network> net) {
     so.contempt = int(a.num("contempt", 0));
     so.hunt = a.num("hunt", 0) != 0;
     so.aggression = int(a.num("aggr", 0));
+    so.adaptive = a.num("adaptive", 0) != 0;
     styled.set_style(so);
     std::printf("strange style vs normal play: %d games at %d ms/move\n", cfg.games, cfg.movetime_ms);
     MatchCallbacks cb;
@@ -505,6 +516,7 @@ int cmd_trap_test(const Args& a, std::shared_ptr<const nnue::Network> net) {
             so.margin_percent = int(a.num("margin", 100));
             so.hunt = a.num("hunt", 1) != 0;
             so.aggression = int(a.num("aggr", 100));
+            so.adaptive = a.num("adaptive", 1) != 0;
             so.seed = std::uint64_t(g + 1);
             engine.set_style(so);
             Position pos;

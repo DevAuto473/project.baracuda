@@ -28,6 +28,7 @@ async function init(net, useNnue) {
     lastObjective: w('brc_last_objective', 'string', []),
     setOpponent: w('brc_set_opponent', null, ['number', 'number']),
     lastTrap: w('brc_last_trap', 'string', []),
+    lastDefending: w('brc_last_defending', 'number', []),
     predict: w('brc_predict', 'string', ['string', 'string']),
     simd: w('brc_simd', 'string', []),
   };
