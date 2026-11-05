@@ -8,10 +8,38 @@
   <meta name="description" content="Play chess against Barracuda, a C++ engine with a self-trained NNUE, running entirely in your browser.">
   <!-- ?v=__BUILD__ is replaced with the commit id on deploy so browsers never serve a stale copy -->
   <link rel="stylesheet" href="css/style.css?v=__BUILD__">
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23000'/%3E%3Cpath d='M20 70 L50 20 L80 70 Z' fill='%239646ff'/%3E%3C/svg%3E">
+  <link rel="icon" type="image/png" sizes="48x48" href="img/favicon-48.png?v=__BUILD__">
+  <link rel="apple-touch-icon" href="img/logo-192.png?v=__BUILD__">
+  <link rel="preload" href="img/logo.webp?v=__BUILD__" as="image" type="image/webp">
+  <!-- Loading screen. This block is inline on purpose: it has to paint black with the badge before
+       anything else has loaded. Its timing lives in js/splash.js. -->
+  <style>
+    html { background: #000; }
+    #splash { position: fixed; inset: 0; z-index: 1000; background: #000; direction: ltr; display: flex; flex-direction: column;
+              align-items: center; justify-content: center; gap: clamp(14px, 3.2dvh, 30px); transition: opacity .6s ease; }
+    #splash.out { opacity: 0; pointer-events: none; }
+    #splash .splash-logo { width: min(84vw, calc(66dvh * 1.3466), 780px); height: auto; opacity: 0; transform: scale(.86);
+                           filter: drop-shadow(0 0 30px rgba(150, 70, 255, .35));
+                           animation: splash-in 1.2s cubic-bezier(.2, .8, .2, 1) .15s forwards; }
+    #splash.fast .splash-logo { animation-duration: .45s; animation-delay: 0s; }
+    #splash .splash-bar { width: min(46vw, 300px); height: 3px; background: #1b1230; overflow: hidden; }
+    #splash .splash-bar i { display: block; height: 100%; background: #9646ff; transform-origin: left; transform: scaleX(0);
+                            animation: splash-bar var(--splash-ms, 5000ms) linear forwards; }
+    @keyframes splash-in { to { opacity: 1; transform: scale(1); } }
+    @keyframes splash-bar { to { transform: scaleX(1); } }
+    @media (prefers-reduced-motion: reduce) { #splash .splash-logo { animation: none; opacity: 1; transform: none; } }
+  </style>
+  <noscript><style>#splash { display: none; }</style></noscript>
 </head>
 <body>
+  <div id="splash" role="img" aria-label="Barracuda - The final checkmate">
+    <img class="splash-logo" src="img/logo.webp?v=__BUILD__" alt="" width="575" height="427" decoding="async" fetchpriority="high">
+    <div class="splash-bar"><i></i></div>
+  </div>
+  <script src="js/splash.js?v=__BUILD__"></script>
+
   <header class="top">
+    <img class="brand-logo" src="img/logo.webp?v=__BUILD__" alt="" width="38" height="28" decoding="async">
     <div class="brand" data-i18n="brand">BARRACUDA</div>
     <div class="tag" data-i18n="tag">C++20 chess engine &middot; self-trained NNUE &middot; runs in your browser</div>
     <button id="langBtn" class="lang-btn" type="button" lang="ar">العربية</button>
@@ -29,6 +57,7 @@
           <div class="board" id="board" role="application" aria-label="Chess board" data-i18n-label="boardLabel"></div>
           <div class="board-overlay" id="boardOverlay" hidden role="dialog" aria-live="polite">
             <div class="overlay-card">
+              <img class="overlay-logo" src="img/logo.webp?v=__BUILD__" alt="" width="575" height="427" decoding="async">
               <div class="thanks-title" id="thanksTitle"></div>
               <p class="thanks-msg" id="thanksMsg"></p>
               <p class="thanks-note" id="thanksNote"></p>

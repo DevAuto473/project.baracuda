@@ -593,6 +593,7 @@ async function boot() {
   } catch (err) {
     state.error = t('startError') + err.message;
     renderStatus();
+    window.__barracudaReady = true; // let the loading screen go: the error is on the page
     return;
   }
   manifestInfo = manifest;
@@ -621,6 +622,7 @@ async function boot() {
   if (wanted) { const f = await engine.call('fen', wanted, ''); if (f && !f.startsWith('!')) customFen = f; }
   state.ready = true;
   await newGame();
+  window.__barracudaReady = true; // the board is drawn: the loading screen (js/splash.js) may leave
 
   $('newGame').onclick = () => { saveSettings(); newGame(); };
   $('undo').onclick = undo;

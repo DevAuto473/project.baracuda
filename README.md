@@ -1,5 +1,7 @@
 # Barracuda
 
+<p align="center"><img src="web/img/logo.webp" alt="The Barracuda - The final checkmate" width="360"></p>
+
 **A cross-platform C++20 chess engine with a custom NNUE, an offline trainer, and a live ImGui dashboard.**
 
 Barracuda runs fully offline with no LibTorch, ONNX, or Python. Bitboards, legal move generation, alpha-beta search, quantised NNUE inference with AVX2/SSE4.1/scalar kernels, and backpropagation are all written by hand in C++20. A 60 FPS Dear ImGui dashboard sits on top: you can play against the engine, watch self-play games, see the network's activations change, and track loss and an estimated Elo while it trains.
@@ -383,6 +385,8 @@ zstdcat lichess_db_standard_rated_2024-01.pgn.zst | ./build/bin/barracuda-cli im
 cat base_*.txt style_*.txt human.txt > all.txt
 ./build/bin/barracuda-cli train --data all.txt --net barracuda.bnn --out barracuda.bnn --epochs 4 --lambda 0.6
 ```
+
+**Loading screen and logo.** The site opens on a black screen with the badge large in the middle and a thin purple progress bar: **5 seconds** when a person arrives (a new visit or a new tab) and **1.5 seconds** after a refresh or another load in the same tab. It never leaves before the engine is ready (and gives up waiting after 15 seconds, so a failed start cannot hide the page); the page behind it cannot be reached by keyboard meanwhile. To change the times, edit the three numbers at the top of `web/js/splash.js`. The badge (`web/img/logo.webp`, a compressed copy of the original) is also in the header, on the thank-you screen and as the tab icon; replace the files in `web/img/` to change it (`logo.webp`, `logo-192.png`, `favicon-48.png`). The deploy workflow copies `web/img`, so keep it in that list if you edit the workflow.
 
 **Right-click and text selection are disabled** on the website (`contextmenu`/`selectstart` handlers at the top of `web/js/app.js`, and the `user-select: none` rule at the end of `web/css/style.css`). This only stops casual copying; the page source stays readable in the browser. Delete those two pieces to bring both back.
 
