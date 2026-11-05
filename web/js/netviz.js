@@ -54,6 +54,8 @@ function piecePoints(letter) {
   return pointCache.get(letter);
 }
 const ease = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+// How solid the piece that forms from particles looks (1 = as bright as the particles can be).
+const PIECE_OPACITY = 0.5;
 const reduceMotion = () => window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 export class NetViz {
@@ -136,12 +138,16 @@ export class NetViz {
 
   resize() {
     const dpr = window.devicePixelRatio || 1;
+    // everything is drawn in "design pixels"; u is the interface scale (see --ui-scale), so the drawing
+    // shrinks with the rest of the page instead of keeping full-size text in a smaller panel
+    const u = (parseFloat(getComputedStyle(document.documentElement).fontSize) || 16) / 16;
     const r = this.canvas.getBoundingClientRect();
-    this.w = Math.max(200, r.width);
-    this.h = Math.max(120, r.height);
-    this.canvas.width = Math.round(this.w * dpr);
-    this.canvas.height = Math.round(this.h * dpr);
-    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const cssW = Math.max(200 * u, r.width), cssH = Math.max(120 * u, r.height);
+    this.w = cssW / u;
+    this.h = cssH / u;
+    this.canvas.width = Math.round(cssW * dpr);
+    this.canvas.height = Math.round(cssH * dpr);
+    this.ctx.setTransform(dpr * u, 0, 0, dpr * u, 0, 0);
     this.kick();
   }
 
@@ -176,8 +182,9 @@ export class NetViz {
     ctx.fillRect(0, 0, w, h);
 
     const fam = getComputedStyle(document.body).fontFamily;
-    const small = `600 ${w < 520 ? 10 : 12}px ${fam}`;
-    const narrow = w < 520;
+    // below ~700 design pixels the five column titles do not fit side by side in their long form
+    const narrow = w < 700;
+    const small = `600 ${narrow ? 10 : 12}px ${fam}`;
     const pieceSize = Math.max(56, Math.min(h * 0.5, w * 0.17, 190));
     const left = narrow ? 14 : 70, right = w - (narrow ? 56 + pieceSize * 0.6 : 40 + pieceSize + 40), top = narrow ? 34 : 44, bottom = h - 12;
     const L = 5;
@@ -318,6 +325,7 @@ export class NetViz {
         a = 0.75 + 0.25 * Math.sin(this.time * 4 + p.jx * 3);
       }
       if (dis > 0) { x += (x - cx) * dis * 0.9 + Math.sin(p.jx) * dis * 18; y += (y - cy) * dis * 0.9 - dis * 20; a *= 1 - dis; }
+      a *= PIECE_OPACITY;
       const col = p.hue ? MAGENTA : CYAN;
       ctx.fillStyle = rgba(col, a * 0.3); ctx.beginPath(); ctx.arc(x, y, 3.2, 0, 7); ctx.fill();
       ctx.fillStyle = rgba(mix(col, [255, 255, 255], 0.65), a); ctx.beginPath(); ctx.arc(x, y, 1.25, 0, 7); ctx.fill();
@@ -327,7 +335,7 @@ export class NetViz {
     // once assembled, the real piece fades in under the particles so it reads clearly
     const done = formed / d.parts.length;
     if (d.img && done > 0.85 && !dis) {
-      ctx.globalAlpha = Math.min(0.28, (done - 0.85) * 2);
+      ctx.globalAlpha = Math.min(0.28 * PIECE_OPACITY, (done - 0.85) * 2);
       ctx.drawImage(d.img, x0, y0, size, size);
       ctx.globalAlpha = 1;
     }

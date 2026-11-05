@@ -15,6 +15,18 @@ document.addEventListener('contextmenu', (e) => e.preventDefault());
 document.addEventListener('selectstart', (e) => e.preventDefault());
 document.addEventListener('dragstart', (e) => e.preventDefault());
 
+// Interface size: --ui-scale in css/style.css is the default. ?scale=0.7 tries another value
+// (between 0.5 and 1.3) and remembers it in this browser; ?scale=default forgets it.
+(function applyScale() {
+  try {
+    const asked = new URLSearchParams(location.search).get('scale');
+    if (asked === 'default') localStorage.removeItem('barracuda-scale');
+    else if (asked !== null && Number.isFinite(Number(asked)) && Number(asked) > 0) localStorage.setItem('barracuda-scale', String(Math.min(1.3, Math.max(0.5, Number(asked)))));
+    const v = Number(localStorage.getItem('barracuda-scale'));
+    if (v >= 0.5 && v <= 1.3) document.documentElement.style.setProperty('--ui-scale', String(v));
+  } catch (_) { /* private mode: the default size is used */ }
+})();
+
 const $ = (id) => document.getElementById(id);
 const els = {
   board: $('board'), status: $('status'), color: $('color'), moves: $('moves'),
