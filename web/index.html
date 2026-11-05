@@ -43,7 +43,12 @@
       <div class="status" id="status">Loading engine&hellip;</div>
     </section>
 
-    <div class="right">
+    <div class="right" id="right" data-tab="game">
+      <nav class="tabs" id="tabs" role="tablist">
+        <button type="button" role="tab" data-tab="game" aria-selected="true" data-i18n="tab.game">Game</button>
+        <button type="button" role="tab" data-tab="net" aria-selected="false" data-i18n="tab.net">Network</button>
+        <button type="button" role="tab" data-tab="moves" aria-selected="false" data-i18n="tab.moves">Moves</button>
+      </nav>
       <div class="panel game">
         <div class="field">
           <label for="level" data-i18n="level">Strength</label>

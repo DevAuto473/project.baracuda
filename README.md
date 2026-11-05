@@ -330,7 +330,7 @@ python3 -m http.server -d web 8000            # then open http://localhost:8000
 ```
 The WebAssembly build uses the same SSE4.1 NNUE kernels (mapped to WASM SIMD), and its network evaluations match the native build exactly. Visitors' games are not collected: training only happens on your machine.
 
-**One screen.** On a desktop-sized window the whole page fits without scrolling (board, controls, the neural network and the move list); on phones and very short windows it stacks and scrolls. Adding `?fen=<FEN>` to the address starts a game from that position.
+**One screen, any screen.** On a desktop-sized window the whole page fits without scrolling (board, controls, the neural network and the move list). On phones, tablets and narrow or short windows the board and status line stay on screen and three tabs under it (Game, Network, Moves) fill the rest; on a phone held sideways the board sits next to the tabs. Nothing overflows horizontally, the page itself never scrolls, and a tab scrolls on its own only when a very small screen needs it. Tested from 320 x 568 to 2560 x 1300, in both languages. Adding `?fen=<FEN>` to the address starts a game from that position.
 
 **Pace.** After your move, Barracuda always waits at least one second before moving on Beginner, Casual and Club (they search almost instantly, and a piece that jumps by itself is hard to follow). The network drawing keeps animating during that second. When Barracuda picks its move, the moving piece assembles from particles drawn out of the network's connections.
 

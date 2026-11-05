@@ -535,6 +535,17 @@ async function boot() {
   $('shareWrap').hidden = !collect;
   $('shareBox').checked = shareEnabled();
   $('shareBox').onchange = (e) => { try { localStorage.setItem('barracuda-share', e.target.checked ? '1' : '0'); } catch (_) { /* ignore */ } };
+  // small screens: three tabs under the board (the tab bar is hidden on desktop, where everything is shown)
+  const right = $('right');
+  const tabs = [...document.querySelectorAll('#tabs button')];
+  const selectTab = (name) => {
+    right.dataset.tab = name;
+    tabs.forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
+    if (viz) viz.kick();
+    try { localStorage.setItem('barracuda-tab', name); } catch (_) { /* ignore */ }
+  };
+  tabs.forEach((b) => { b.onclick = () => selectTab(b.dataset.tab); });
+  try { const saved = localStorage.getItem('barracuda-tab'); if (saved) selectTab(saved); } catch (_) { /* ignore */ }
   $('thanksNew').onclick = () => { saveSettings(); newGame(); };
   $('thanksShow').onclick = hideThanks;
   const wanted = new URLSearchParams(location.search).get('fen'); // e.g. ?fen=<FEN> starts from that position
