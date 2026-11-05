@@ -370,7 +370,7 @@ cat selfplay.txt human.txt > all.txt
 
 Elo is not the goal here: the goal is an engine whose moves look wrong to people and still work.
 
-**How the style works.** After the normal search, Barracuda ranks the other legal moves by how unusual they look (rook lifts and king walks in the middlegame, flank pawns, retreats, quiet moves where a capture is expected, moving the same piece again, early queen trips). It then proves, with null-window searches at the same depth as the main search, that the strange move keeps at least `best score - margin`. The first one that passes is played. The margin is 0 when Barracuda is worse, 15 to 25 centipawns in a balanced game, and up to 2 pawns when it is clearly winning. 30% of the move time is kept aside for these proofs. Mates are never replaced.
+**How the style works.** After the normal search, Barracuda ranks the other legal moves by how unusual they look (rook lifts and king walks in the middlegame, flank pawns, retreats, quiet moves where a capture is expected, moving the same piece again, early queen trips). It then proves, with null-window searches at the same depth as the main search, that the strange move keeps at least `best score - margin`. The first one that passes is played. The margin is 0 when Barracuda is worse, about 0.1 pawn in a balanced game, and up to 1.1 pawns when it is clearly winning. The proofs use the time the main search leaves unused (it stops instead of starting an iteration it could not finish), so the main search is never shortened. Mates are never replaced.
 
 Switch it on or off: dashboard **Metrics → Training → Strange playing style** (or console `style on` / `style off`), UCI option `Style`, website always on.
 
@@ -378,7 +378,7 @@ Measure it:
 ```bash
 ./build/bin/barracuda-cli style-test --games 40 --movetime 300
 ```
-It plays the strange style against normal play and prints how many moves were unusual and what that costs in Elo.
+It plays the strange style against normal play and prints how many moves were unusual and what that costs in Elo. `--margin 200` doubles the allowed concession (stranger, weaker), `--margin 50` halves it; `--verify 20` holds back 20% of the move time for the proofs. In our tests at 150 ms/move the default setting played about 5% unusual moves at no measurable cost (+35 +/- 115 Elo over 20 games), while holding back 30% of the time cost about 50 Elo and wider margins cost more.
 
 **Training the style into the network.** The search picks the odd moves; training makes the network *like* the positions they lead to, so over time the engine plays them on its own, even with the style off:
 

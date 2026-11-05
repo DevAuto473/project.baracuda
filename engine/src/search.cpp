@@ -538,11 +538,11 @@ int style_margin(Value best) {
     // the concession is paid on every styled move, so it stays small while the game is open
     // and only grows once the advantage is large enough to absorb it
     if (best < -40) return 0;   // in trouble: only the best move will do
-    if (best < 60) return 15;   // balanced game: almost free
-    if (best < 200) return 25;
-    if (best < 500) return 50;
-    if (best < 900) return 110;
-    return 220;                 // clearly winning: free to be bizarre
+    if (best < 60) return 8;    // balanced game: almost free
+    if (best < 200) return 12;
+    if (best < 500) return 25;
+    if (best < 900) return 55;
+    return 110;                 // clearly winning: free to be bizarre
 }
 
 int move_strangeness(const Position& pos, Move m) {

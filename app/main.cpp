@@ -461,7 +461,7 @@ int cmd_style_test(const Args& a, std::shared_ptr<const nnue::Network> net) {
     StyleOptions so;
     so.enabled = true;
     so.margin_percent = int(a.num("margin", 100));
-    so.verify_percent = int(a.num("verify", 30));
+    so.verify_percent = int(a.num("verify", 0));
     styled.set_style(so);
     std::printf("strange style vs normal play: %d games at %d ms/move\n", cfg.games, cfg.movetime_ms);
     MatchCallbacks cb;

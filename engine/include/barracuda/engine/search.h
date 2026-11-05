@@ -67,7 +67,11 @@ enum class EvalMode { AUTO, CLASSICAL, NNUE };
 // when the engine is clearly winning - so it is precise when it matters and bizarre when it can afford it.
 struct StyleOptions {
     bool enabled = false;
-    int verify_percent = 30; int margin_percent = 100; // share of a timed search reserved for verifying the unusual alternatives
+    // share of the move time kept aside for proving strange moves. 0 = only the time the
+    // main search leaves unused (it stops early rather than start an iteration it cannot finish):
+    // measured to cost nothing, while holding back 30% cost about 50 Elo
+    int verify_percent = 0;
+    int margin_percent = 100; // scales style_margin()
     std::uint64_t seed = 0;  // 0 = random
 };
 int style_margin(Value best_score);                 // allowed loss in centipawns
