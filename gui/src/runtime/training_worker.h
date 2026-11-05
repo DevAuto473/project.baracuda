@@ -21,6 +21,13 @@ struct SelfPlayParams {
     int depth = 6;
     int random_plies = 8;
     std::string output = "selfplay.txt";
+    bool strange_style = true; // its own games, in its own style
+};
+
+struct PublishParams {
+    int games = 40;           // network vs classical match deciding whether the site plays with the network
+    bool force_nnue = false;  // use it on the site even if it lost
+    bool git_push = true;     // git add web/net + commit + push
 };
 
 struct TrainParams {
@@ -56,6 +63,7 @@ public:
     void start_training(const TrainParams& p);
     void start_benchmark(const BenchParams& p);
     void start_match(const MatchParams& p);
+    void start_publish(const PublishParams& p);
     void save_network(const std::string& path);
     void load_network(const std::string& path);
     void reset_network();
@@ -73,7 +81,7 @@ private:
     struct Load { std::string path; };
     struct Reset {};
     struct Quit {};
-    using Command = std::variant<SelfPlayParams, TrainParams, BenchParams, MatchParams, Save, Load, Reset, Quit>;
+    using Command = std::variant<SelfPlayParams, TrainParams, BenchParams, MatchParams, PublishParams, Save, Load, Reset, Quit>;
 
     void run();
     void push(Command c);
@@ -85,6 +93,7 @@ private:
     void do_train(const TrainParams& p);
     float do_benchmark(const BenchParams& p, bool quiet, int force_mode = -1);
     void do_match(const MatchParams& p);
+    void do_publish(const PublishParams& p);
 
     Logger& log_;
     NetworkRegistry& nets_;

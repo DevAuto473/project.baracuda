@@ -144,7 +144,7 @@ struct SuiteRow {
     Value score = 0;
 };
 
-enum class TrainingTask : std::uint8_t { Idle, SelfPlay, LoadingData, Training, Benchmark, Match };
+enum class TrainingTask : std::uint8_t { Idle, SelfPlay, LoadingData, Training, Benchmark, Match, Publish };
 
 struct TrainingSnapshot {
     TrainingTask task = TrainingTask::Idle;

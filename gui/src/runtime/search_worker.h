@@ -15,7 +15,7 @@ namespace barracuda::runtime {
 
 class SearchWorker {
 public:
-    SearchWorker(Logger& log, NetworkRegistry& nets, std::atomic<int>& eval_mode);
+    SearchWorker(Logger& log, NetworkRegistry& nets, std::atomic<int>& eval_mode, std::atomic<bool>& strange_style);
     ~SearchWorker();
 
     // All requests are non-blocking (called from the render thread).
@@ -50,6 +50,7 @@ private:
     Logger& log_;
     NetworkRegistry& nets_;
     std::atomic<int>& eval_mode_;
+    std::atomic<bool>& strange_style_;
     Search search_{64};
 
     std::mutex mutex_;

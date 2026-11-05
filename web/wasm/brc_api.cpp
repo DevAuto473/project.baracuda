@@ -37,6 +37,8 @@ std::unique_ptr<Search> g_search;
 std::shared_ptr<const nnue::Network> g_net;
 std::string g_out;
 std::string g_view_json;
+bool g_last_styled = false;
+std::string g_last_objective;
 nnue::NetworkView g_view;
 
 // Compact JSON of what the network "sees" for `pos`: activations per layer and the edge weights
@@ -133,6 +135,16 @@ BRC_EXPORT void brc_set_eval(int mode) {
 
 BRC_EXPORT const char* brc_simd() { return nnue::simd_backend(); }
 
+// Strange style on/off (see StyleOptions in search.h).
+BRC_EXPORT void brc_set_style(int enabled) {
+    StyleOptions so;
+    so.enabled = enabled != 0;
+    search().set_style(so);
+}
+// After brc_search: 1 if the style replaced the plain best move, and that plain best move (UCI).
+BRC_EXPORT int brc_last_styled() { return g_last_styled ? 1 : 0; }
+BRC_EXPORT const char* brc_last_objective() { return g_last_objective.c_str(); }
+
 BRC_EXPORT const char* brc_legal_moves(const char* fen, const char* moves) {
     Position pos;
     if (!build(fen, moves, pos)) return g_out.c_str();
@@ -223,6 +235,8 @@ BRC_EXPORT const char* brc_search(const char* fen, const char* moves, int moveti
                     net_view_json(leaf).c_str());
     });
 
+    g_last_styled = r.styled;
+    g_last_objective = r.objective_best ? r.objective_best.to_uci() : std::string();
     int score = stm == WHITE ? r.score : -r.score;
     if (is_mate_score(r.score)) score = score > 0 ? 30000 : -30000;
     std::string pv;

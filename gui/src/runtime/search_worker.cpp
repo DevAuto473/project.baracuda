@@ -4,8 +4,8 @@
 
 namespace barracuda::runtime {
 
-SearchWorker::SearchWorker(Logger& log, NetworkRegistry& nets, std::atomic<int>& eval_mode)
-    : log_(log), nets_(nets), eval_mode_(eval_mode) {
+SearchWorker::SearchWorker(Logger& log, NetworkRegistry& nets, std::atomic<int>& eval_mode, std::atomic<bool>& strange_style)
+    : log_(log), nets_(nets), eval_mode_(eval_mode), strange_style_(strange_style) {
     thread_ = std::thread([this] { run(); });
 }
 
@@ -75,6 +75,7 @@ void SearchWorker::do_inspect(const Position& pos) {
 void SearchWorker::do_go(const Go& g) {
     search_.set_network(nets_.get());
     search_.set_eval_mode(EvalMode(eval_mode_.load()));
+    { StyleOptions so; so.enabled = strange_style_.load(); search_.set_style(so); }
     const Color stm = g.pos.side_to_move();
 
     SearchSnapshot snap;
@@ -120,6 +121,8 @@ void SearchWorker::do_go(const Go& g) {
     done.nnue = search_.nnue_active();
     done.pv_san = pv_to_san(g.pos, r.pv);
     info.publish(done);
+
+    if (r.styled) log_.logf(LogLevel::Search, "strange style: played %s instead of %s", r.best.to_uci().c_str(), r.objective_best.to_uci().c_str());
 
     MoveResult mr;
     mr.request_id = g.id;

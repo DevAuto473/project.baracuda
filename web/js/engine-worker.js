@@ -23,6 +23,9 @@ async function init(net, useNnue) {
     newGame: w('brc_new_game', null, []),
     search: w('brc_search', 'string', ['string', 'string', 'number', 'number']),
     setEval: w('brc_set_eval', null, ['number']),
+    setStyle: w('brc_set_style', null, ['number']),
+    lastStyled: w('brc_last_styled', 'number', []),
+    lastObjective: w('brc_last_objective', 'string', []),
     simd: w('brc_simd', 'string', []),
   };
   w('brc_init', 'number', [])();
@@ -35,6 +38,7 @@ async function init(net, useNnue) {
   }
   const nnue = loaded && !!useNnue;
   api.setEval(nnue ? 1 : 0);
+  api.setStyle(1); // the website always plays in Barracuda's strange style
   return { simd: api.simd(), nnue, hasNet: loaded };
 }
 

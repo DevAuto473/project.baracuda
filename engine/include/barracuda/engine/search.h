@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -45,6 +46,8 @@ struct SearchInfo {
 
 struct SearchResult {
     Move best;
+    Move objective_best; // what plain search preferred (differs from `best` when the style chose another move)
+    bool styled = false;
     Move ponder;
     Value score = 0;
     int depth = 0;
@@ -56,6 +59,19 @@ struct SearchResult {
 // AUTO uses the NNUE only once it has seen enough training data to beat the hand-crafted eval;
 // a network trained on a few thousand positions is much weaker than the classical evaluation.
 enum class EvalMode { AUTO, CLASSICAL, NNUE };
+
+// "Strange" playing style. After the normal search, the engine looks at the most unusual-looking
+// alternatives (king walks, sacrifices, rim knights, under-promotions, retreats...) and plays one of
+// them only if a verification search proves it loses at most `style_margin(best)` centipawns compared
+// with the best move. The margin is 0 when the position is bad, small when it is close, and grows
+// when the engine is clearly winning - so it is precise when it matters and bizarre when it can afford it.
+struct StyleOptions {
+    bool enabled = false;
+    int verify_percent = 30; int margin_percent = 100; // share of a timed search reserved for verifying the unusual alternatives
+    std::uint64_t seed = 0;  // 0 = random
+};
+int style_margin(Value best_score);                 // allowed loss in centipawns
+int move_strangeness(const Position& pos, Move m);  // 0 = ordinary, higher = more surprising to humans
 constexpr std::uint64_t kAutoNnueMinSamples = 1'000'000;
 
 // UCI-style score string: "cp 35" or "mate -3"
@@ -78,6 +94,10 @@ public:
     void set_network(std::shared_ptr<const nnue::Network> net);
     std::shared_ptr<const nnue::Network> network() const { return net_; }
     void set_eval_mode(EvalMode m) { eval_mode_ = m; }
+    void set_style(const StyleOptions& s);
+    const StyleOptions& style() const { return style_; }
+    std::uint64_t styled_moves() const { return styled_moves_; }
+    std::uint64_t style_decisions() const { return style_decisions_; }
     EvalMode eval_mode() const { return eval_mode_; }
     bool nnue_active() const;
 
@@ -115,6 +135,11 @@ private:
     std::int64_t soft_ms_ = 0, hard_ms_ = 0;
     bool time_limited_ = false;
     bool can_stop_ = false;
+    bool time_up_ = false;
+    std::uint64_t styled_moves_ = 0, style_decisions_ = 0; // stop_ was raised by the time/node limit (not by the caller)
+    StyleOptions style_;
+    std::mt19937_64 style_rng_{12345};
+    void apply_style(const Position& root, const MoveList& root_moves, std::int64_t full_hard_ms, SearchResult& result);
 
     std::uint64_t nodes_ = 0;
     int seldepth_ = 0;

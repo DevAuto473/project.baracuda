@@ -27,6 +27,7 @@ private:
     runtime::TrainParams tp_;
     runtime::BenchParams bp_;
     runtime::MatchParams mp_;
+    runtime::PublishParams pub_;
     char sp_out_[256];
     char tp_data_[256];
     char tp_out_[256];

@@ -5,6 +5,7 @@
 
 #include "barracuda/engine/match.h"
 #include "barracuda/engine/notation.h"
+#include "barracuda/engine/publish.h"
 #include "barracuda/engine/selfplay.h"
 #include "barracuda/engine/suite.h"
 #include "barracuda/nnue/dataset.h"
@@ -72,6 +73,7 @@ void TrainingWorker::start_selfplay(const SelfPlayParams& p) { push(p); }
 void TrainingWorker::start_training(const TrainParams& p) { push(p); }
 void TrainingWorker::start_benchmark(const BenchParams& p) { push(p); }
 void TrainingWorker::start_match(const MatchParams& p) { push(p); }
+void TrainingWorker::start_publish(const PublishParams& p) { push(p); }
 void TrainingWorker::save_network(const std::string& path) { push(Save{path}); }
 void TrainingWorker::load_network(const std::string& path) { push(Load{path}); }
 void TrainingWorker::reset_network() { push(Reset{}); }
@@ -107,6 +109,8 @@ void TrainingWorker::run() {
             do_benchmark(*bp, false);
         } else if (auto* mp = std::get_if<MatchParams>(&cmd)) {
             do_match(*mp);
+        } else if (auto* pp = std::get_if<PublishParams>(&cmd)) {
+            do_publish(*pp);
         } else if (auto* s = std::get_if<Save>(&cmd)) {
             std::string err;
             if (master_.save(s->path, &err)) {
@@ -170,8 +174,9 @@ void TrainingWorker::do_selfplay(const SelfPlayParams& p) {
 
     search_.set_network(nets_.get());
     search_.set_eval_mode(EvalMode(eval_mode_.load()));
-    log_.logf(LogLevel::Train, "self-play: %d games at depth %d -> %s (%s eval)", p.games, p.depth, p.output.c_str(),
-              search_.nnue_active() ? "NNUE" : "classical");
+    { StyleOptions so; so.enabled = p.strange_style; search_.set_style(so); }
+    log_.logf(LogLevel::Train, "self-play: %d games at depth %d -> %s (%s eval%s)", p.games, p.depth, p.output.c_str(),
+              search_.nnue_active() ? "NNUE" : "classical", p.strange_style ? ", strange style" : "");
 
     SelfPlayConfig cfg;
     cfg.games = p.games;
@@ -230,6 +235,7 @@ void TrainingWorker::do_selfplay(const SelfPlayParams& p) {
     last.active = false;
     last.serial = ++serial;
     observation.publish(last);
+    search_.set_style(StyleOptions{}); // benchmarks and matches measure plain strength
 }
 
 // ----------------------------------------------------------------------------- training
@@ -413,6 +419,56 @@ void TrainingWorker::do_match(const MatchParams& p) {
                   st.wins, st.draws, st.losses, state_.match_abs, st.elo.error, state_.match_anchor);
     else
         log_.log(LogLevel::Warn, "match stopped before the first game finished");
+}
+
+// ----------------------------------------------------------------------------- publish
+// Saves the network being trained, runs the website publish step (match + manifest + copy into
+// web/net) and, if asked, commits and pushes it so GitHub Pages redeploys the site.
+void TrainingWorker::do_publish(const PublishParams& p) {
+    namespace fs = std::filesystem;
+    state_.task = TrainingTask::Publish;
+    state_.status = "publishing to the website";
+    state_.progress = 0.0f;
+    publish_stats(true);
+
+    std::error_code ec;
+    const std::string root = find_repo_root(fs::current_path(ec).string());
+    if (root.empty()) {
+        log_.log(LogLevel::Error, "publish: start Barracuda from the project folder (e.g. cd ~/barracuda && ./build/bin/barracuda)");
+        return;
+    }
+    // publish exactly what is in memory now
+    const std::string net_file = state_.net_path.empty() ? "barracuda.bnn" : state_.net_path;
+    std::string err;
+    if (!master_.save(net_file, &err)) {
+        log_.logf(LogLevel::Error, "publish: cannot save the network: %s", err.c_str());
+        return;
+    }
+    PublishOptions opt;
+    opt.net_path = net_file;
+    opt.out_dir = (fs::path(root) / "web" / "net").string();
+    opt.games = p.games;
+    opt.force_nnue = p.force_nnue;
+    const PublishLog log = [this](const std::string& s) { log_.log(LogLevel::Bench, s); };
+    log_.logf(LogLevel::Bench, "publishing %s (%u epochs) to %s", net_file.c_str(), master_.epochs_trained, opt.out_dir.c_str());
+    const PublishResult r = barracuda::publish_network(opt, stop_, log); // the library function (not our own publish_network())
+    if (!r.ok) {
+        log_.logf(LogLevel::Error, "publish failed: %s", r.error.c_str());
+        return;
+    }
+    log_.logf(LogLevel::Success, "web/net updated: the site will %s (Elo ~%.0f)",
+              r.use_nnue ? "play with this network" : "draw this network but keep playing with the classical evaluator", r.elo);
+    if (!p.git_push) {
+        log_.log(LogLevel::Info, "not pushed: run  git add web/net && git commit -m \"Update network\" && git push");
+        return;
+    }
+    state_.status = "git push";
+    publish_stats(true);
+    const std::string msg = "Update network (" + std::to_string(r.epochs) + " epochs)";
+    if (git_commit_and_push(root, "web/net", msg, log))
+        log_.log(LogLevel::Success, "pushed to GitHub: the website updates in a couple of minutes");
+    else
+        log_.log(LogLevel::Error, "git push failed (see the lines above). In a terminal: cd ~/barracuda && git push");
 }
 
 // ----------------------------------------------------------------------------- benchmark

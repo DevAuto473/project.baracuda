@@ -18,6 +18,7 @@
 #include "barracuda/engine/match.h"
 #include "barracuda/engine/movegen.h"
 #include "barracuda/engine/notation.h"
+#include "barracuda/engine/publish.h"
 #include "barracuda/engine/search.h"
 #include "barracuda/engine/selfplay.h"
 #include "barracuda/engine/suite.h"
@@ -178,6 +179,7 @@ int cmd_selfplay(const Args& a, std::shared_ptr<const nnue::Network> net) {
         else c.seed = std::uint64_t(std::chrono::steady_clock::now().time_since_epoch().count()) + std::uint64_t(id) * 7919;
         Search search(16);
         search.set_network(net);
+        if (a.has("style")) { StyleOptions so; so.enabled = true; search.set_style(so); }
         SelfPlayCallbacks cb;
         cb.on_game_end = [&](const SelfPlayStats& st, const std::string& res) {
             std::lock_guard<std::mutex> lk(io);
@@ -417,91 +419,62 @@ int cmd_import_games(const Args& a, std::shared_ptr<const nnue::Network> net) {
 // Writes the website's network + manifest.json. The match decides whether the site uses the network:
 // it is only switched on when it actually beats the classical evaluator (or with --force-nnue).
 int cmd_publish(const Args& a) {
-    namespace fs = std::filesystem;
-    const fs::path out = a.get("out", "web/net");
-    const std::string net_path = a.get("net", "barracuda.bnn");
-    std::error_code ec;
-    fs::create_directories(out, ec);
-
-    std::shared_ptr<const nnue::Network> net;
-    if (fs::exists(net_path, ec)) net = try_load_net(net_path, true);
-
-    // anchor: tactical-suite estimate of the classical evaluator
-    Search classical(32);
-    classical.set_eval_mode(EvalMode::CLASSICAL);
-    std::printf("calibrating classical evaluator on the tactical suite ...\n");
-    const SuiteResult cal = run_suite(classical, builtin_wac_suite(), 150, g_stop);
-    double elo = cal.elo_estimate, err = 0.0;
-    bool use_nnue = false;
-    MatchStats st;
-    const int games = int(a.num("games", 40));
-
-    if (net && games > 0) {
-        MatchConfig cfg;
-        cfg.games = games;
-        cfg.movetime_ms = int(a.num("movetime", 100));
-        Search nn(16), cl(16);
-        nn.set_network(net);
-        nn.set_eval_mode(EvalMode::NNUE);
-        cl.set_eval_mode(EvalMode::CLASSICAL);
-        std::printf("match: %d games at %d ms/move, NNUE vs classical ...\n", cfg.games, cfg.movetime_ms);
-        MatchCallbacks cb;
-        cb.on_game_end = [&](const MatchStats& m, const std::string&) {
-            std::printf("\r  game %d/%d  +%d =%d -%d  ", m.games_done, cfg.games, m.wins, m.draws, m.losses);
-            std::fflush(stdout);
-        };
-        run_match(nn, cl, cfg, g_stop, cb, &st);
-        std::printf("\n");
-        if (st.games_done > 0) {
-            use_nnue = st.elo.elo > 0.0;
-            if (use_nnue) {
-                elo = cal.elo_estimate + st.elo.elo;
-                err = st.elo.error;
-            }
-        }
+    PublishOptions opt;
+    opt.net_path = a.get("net", "barracuda.bnn");
+    opt.out_dir = a.get("out", "web/net");
+    opt.games = int(a.num("games", 40));
+    opt.movetime_ms = int(a.num("movetime", 100));
+    opt.force_nnue = a.has("force-nnue");
+    opt.force_classical = a.has("force-classical");
+    const PublishLog log = [](const std::string& s) { std::printf("%s\n", s.c_str()); std::fflush(stdout); };
+    const PublishResult r = publish_network(opt, g_stop, log);
+    if (!r.ok) {
+        std::cerr << "publish failed: " << r.error << "\n";
+        return 1;
     }
-    if (net && a.has("force-nnue")) use_nnue = true;
-    if (a.has("force-classical")) use_nnue = false;
-
-    const fs::path dest = out / "barracuda.bnn";
-    if (net) { // always shipped: the page draws it; `eval` below says whether it also plays
-        fs::copy_file(net_path, dest, fs::copy_options::overwrite_existing, ec);
-        if (ec) {
-            std::cerr << "cannot copy network: " << ec.message() << "\n";
-            return 1;
-        }
-    } else {
-        fs::remove(dest, ec);
-    }
-
-    const std::time_t now = std::time(nullptr);
-    char iso[32];
-    std::strftime(iso, sizeof(iso), "%Y-%m-%dT%H:%M:%SZ", std::gmtime(&now));
-    const bool measured = use_nnue && st.games_done > 0;
-    std::string basis = measured ? "classical anchor (tactical suite) + measured match advantage"
-                        : use_nnue ? "network not measured (forced); Elo shown is the classical anchor"
-                                   : "tactical-suite estimate of the classical evaluator";
-    std::ostringstream js;
-    js << "{\n"
-       << "  \"version\": " << (long long)now << ",\n"
-       << "  \"updated\": \"" << iso << "\",\n"
-       << "  \"eval\": \"" << (use_nnue ? "nnue" : "classical") << "\",\n"
-       << "  \"net\": " << (net ? "\"barracuda.bnn\"" : "null") << ",\n"
-       << "  \"epochs\": " << (net ? net->epochs_trained() : 0) << ",\n"
-       << "  \"samples\": " << (net ? (unsigned long long)net->samples_trained() : 0ULL) << ",\n"
-       << "  \"elo\": " << (long long)std::llround(elo) << ",\n"
-       << "  \"elo_error\": " << (long long)std::llround(err) << ",\n"
-       << "  \"elo_basis\": \"" << basis << "\",\n"
-       << "  \"match\": {\"games\": " << st.games_done << ", \"wins\": " << st.wins << ", \"draws\": " << st.draws
-       << ", \"losses\": " << st.losses << "}\n"
-       << "}\n";
-    std::ofstream(out / "manifest.json") << js.str();
-    std::printf("\npublished to %s: eval=%s, Elo ~%.0f%s\n", out.string().c_str(), use_nnue ? "nnue" : "classical", elo,
-                use_nnue ? (" +/- " + std::to_string(int(std::llround(err)))).c_str() : "");
-    if (net && !use_nnue && !a.has("force-nnue"))
+    std::printf("\npublished to %s: eval=%s, Elo ~%.0f%s\n", opt.out_dir.c_str(), r.use_nnue ? "nnue" : "classical", r.elo,
+                r.use_nnue && r.elo_error > 0 ? (" +/- " + std::to_string(int(std::lround(r.elo_error)))).c_str() : "");
+    if (r.has_net && !r.use_nnue)
         std::printf("note: the network did not beat the classical evaluator yet, so the site only draws it and still plays with the classical one.\n"
                     "      Train longer (more self-play data / epochs) and publish again, or use --force-nnue.\n");
-    std::printf("next: git add %s && git commit -m \"Update network\" && git push\n", out.string().c_str());
+    if (a.has("push")) {
+        const std::string root = find_repo_root(opt.out_dir);
+        if (root.empty()) { std::cerr << "not inside a git repository\n"; return 1; }
+        const std::string msg = "Update network (" + std::to_string(r.epochs) + " epochs)";
+        if (!git_commit_and_push(root, opt.out_dir, msg, log)) { std::cerr << "git commit/push failed (see above)\n"; return 1; }
+        std::printf("pushed: the website updates in a couple of minutes\n");
+    } else {
+        std::printf("next: git add %s && git commit -m \"Update network\" && git push   (or add --push)\n", opt.out_dir.c_str());
+    }
+    return 0;
+}
+
+// Strange style vs the same engine playing normally: how often the style changes the move, and what it costs.
+int cmd_style_test(const Args& a, std::shared_ptr<const nnue::Network> net) {
+    MatchConfig cfg;
+    cfg.games = int(a.num("games", 20));
+    cfg.movetime_ms = int(a.num("movetime", 200));
+    cfg.seed = std::uint64_t(a.num("seed", 0));
+    Search styled(16), plain(16);
+    styled.set_network(net);
+    plain.set_network(net);
+    StyleOptions so;
+    so.enabled = true;
+    so.margin_percent = int(a.num("margin", 100));
+    so.verify_percent = int(a.num("verify", 30));
+    styled.set_style(so);
+    std::printf("strange style vs normal play: %d games at %d ms/move\n", cfg.games, cfg.movetime_ms);
+    MatchCallbacks cb;
+    cb.on_game_end = [&](const MatchStats& st, const std::string& d) {
+        std::printf("game %3d  %-58s +%d =%d -%d\n", st.games_done, d.c_str(), st.wins, st.draws, st.losses);
+        std::fflush(stdout);
+    };
+    MatchStats st;
+    run_match(styled, plain, cfg, g_stop, cb, &st);
+    const double pct = styled.style_decisions() ? 100.0 * double(styled.styled_moves()) / double(styled.style_decisions()) : 0.0;
+    std::printf("\nunusual moves played: %llu of %llu (%.0f%%)\nresult for the strange style: +%d =%d -%d  ->  %+.0f +/- %.0f Elo vs normal play\n",
+                (unsigned long long)styled.styled_moves(), (unsigned long long)styled.style_decisions(), pct, st.wins, st.draws,
+                st.losses, st.elo.elo, st.elo.error);
     return 0;
 }
 
@@ -560,6 +533,7 @@ private:
             std::printf("option name Hash type spin default 64 min 1 max 65536\n");
             std::printf("option name EvalFile type string default barracuda.bnn\n");
             std::printf("option name EvalMode type combo default Auto var Auto var Classical var NNUE\n");
+            std::printf("option name Style type check default false\n");
             std::printf("uciok\n");
         } else if (cmd == "isready") {
             std::printf("readyok\n");
@@ -611,6 +585,10 @@ private:
             search_.set_hash_mb(std::size_t(std::max(1, std::atoi(value.c_str()))));
         } else if (name == "EvalFile") {
             if (auto net = try_load_net(value, true)) search_.set_network(net);
+        } else if (name == "Style") {
+            StyleOptions so;
+            so.enabled = value == "true";
+            search_.set_style(so);
         } else if (name == "EvalMode") {
             search_.set_eval_mode(value == "Classical" ? EvalMode::CLASSICAL : value == "NNUE" ? EvalMode::NNUE : EvalMode::AUTO);
         }
@@ -674,12 +652,13 @@ void usage() {
         "  barracuda-cli                       UCI mode (for Cute Chess, Arena, BanksiaGUI, ...)\n"
         "  barracuda-cli perft <depth> [fen]   move generator verification\n"
         "  barracuda-cli bench [depth]         fixed-depth node/speed benchmark\n"
-        "  barracuda-cli selfplay --games N --depth D [--nodes N] [--threads T] [--out selfplay.txt]\n"
+        "  barracuda-cli selfplay --games N --depth D [--nodes N] [--threads T] [--style] [--out selfplay.txt]\n"
+        "  barracuda-cli style-test [--games 20] [--movetime 200]   strange style vs normal play (how often, how costly)\n"
         "  barracuda-cli train --data selfplay.txt [--out barracuda.bnn] [--net init.bnn] [--epochs N]\n"
         "                      [--batch N] [--lr X] [--lambda X] [--threads N] [--max-samples N]\n"
         "  barracuda-cli suite [--file wac.epd] [--movetime ms]   tactical suite + Elo estimate\n"
         "  barracuda-cli import-games --in games.csv|jsonl [--out human.txt] [--depth 6]   website games -> training data\n"
-        "  barracuda-cli publish [--net barracuda.bnn] [--out web/net] [--games 40]   write the website network + manifest\n"
+        "  barracuda-cli publish [--net barracuda.bnn] [--out web/net] [--games 40] [--push]   website network + manifest (+ git push)\n"
         "  barracuda-cli match [--games N] [--movetime ms] [--net f.bnn]   NNUE vs classical, Elo +/- margin\n\n"
         "  Global: --net <file.bnn> (default: ./barracuda.bnn if present)  --classical\n",
         kVersion);
@@ -717,6 +696,7 @@ int main(int argc, char** argv) {
     if (sub == "train") return cmd_train(args);
     if (sub == "suite") return cmd_suite(args, net);
     if (sub == "match") return cmd_match(args, net);
+    if (sub == "style-test") return cmd_style_test(args, net);
     if (sub == "publish") return cmd_publish(args);
     if (sub == "import-games") return cmd_import_games(args, net);
     usage();

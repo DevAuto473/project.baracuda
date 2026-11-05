@@ -32,9 +32,16 @@ check('fool\'s mate status', status(START, 'f2f3 e7e5 g2g4 d8h4').startsWith('0-
 check('stalemate status', status('7k/5Q2/6K1/8/8/8/8/8 b - - 0 1', '').includes('stalemate'));
 check('threefold via move list', status(START, 'g1f3 g8f6 f3g1 f6g8 g1f3 g8f6 f3g1 f6g8').includes('threefold'));
 
+f('brc_set_style', null, ['number'])(1); // the site plays with the strange style on
 let t0 = Date.now();
 let r = search('6k1/5ppp/8/8/8/8/5PPP/3R2K1 w - - 0 1', '', 200, 8).split(' ');
 check('finds back-rank mate', r[0] === 'd1d8' && Number(r[1]) === 30000, r.slice(0, 4).join(' '));
+check('style never replaces a mate', f('brc_last_styled', 'number', [])() === 0);
+let styledCount = 0;
+for (const fen of [START, 'r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4', 'r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10', '6k1/5ppp/8/8/8/2Q5/5PPP/6K1 w - - 0 1']) {
+  search(fen, '', 300, 64); if (f('brc_last_styled', 'number', [])()) styledCount++;
+}
+console.log(`style changed the move in ${styledCount} of 4 test positions`);
 r = search('4k3/8/8/3q4/8/8/3R4/4K3 w - - 0 1', '', 300, 12).split(' ');
 check('progress messages posted', infos.length > 3 && infos.every(i => i.type === 'info' && typeof i.pv === 'string'));
 check('wins the hanging queen', r[0] === 'd2d5', r.slice(0, 4).join(' '));

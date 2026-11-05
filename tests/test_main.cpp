@@ -344,6 +344,51 @@ TEST(elo_and_match) {
     CHECK(st.games_done == 2 && st.wins + st.draws + st.losses == 2);
 }
 
+TEST(strange_style) {
+    StyleOptions so;
+    so.enabled = true;
+    so.seed = 3;
+    // a forced mate is never traded for style
+    Search s(8);
+    s.set_style(so);
+    SearchLimits lim;
+    lim.depth = 6;
+    SearchResult r = s.go(Position("6k1/5ppp/8/8/8/8/5PPP/3R2K1 w - - 0 1"), lim);
+    CHECK(r.best.to_uci() == "d1d8" && !r.styled);
+    // strangeness features
+    Position king_walk("r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3");
+    CHECK(move_strangeness(king_walk, parse_uci_move(king_walk, "e1e2")) >= 30);
+    CHECK(move_strangeness(king_walk, parse_uci_move(king_walk, "f3h4")) >= 15);
+    CHECK(move_strangeness(king_walk, parse_uci_move(king_walk, "d2d4")) < 10);
+    CHECK(style_margin(-300) == 0 && style_margin(0) > 0 && style_margin(1000) > style_margin(0));
+    // whenever the style picks another move, an independent deeper search agrees it was a small concession
+    const char* fens[] = {
+        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4",
+        "r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10",
+        "4k3/8/8/3q4/8/8/3R4/4K3 w - - 0 1",
+        "r1bq1rk1/pp2bppp/2n1pn2/3p4/2PP4/2N1PN2/PP3PPP/R2QKB1R w KQ - 0 8",
+    };
+    int styled = 0;
+    for (const char* f : fens) {
+        Position pos(f);
+        Search a(8), judge(8);
+        a.set_style(so);
+        lim.depth = 7;
+        const SearchResult res = a.go(pos, lim);
+        if (!res.styled) continue;
+        ++styled;
+        SearchLimits deep;
+        deep.depth = 8;
+        auto score_after = [&](Move m) { Position p = pos; p.do_move(m); judge.new_game(); return -judge.go(p, deep).score; };
+        const int best = score_after(res.objective_best), chosen = score_after(res.best);
+        const int allowed = style_margin(best) + 40; // + tolerance: different depths disagree a little
+        if (chosen < best - allowed) std::printf("  %s: %s (%d) vs %s (%d)\n", f, res.best.to_uci().c_str(), chosen, res.objective_best.to_uci().c_str(), best);
+        CHECK(chosen >= best - allowed);
+    }
+    std::printf("  style changed the move in %d of %zu positions\n", styled, std::size(fens));
+}
+
 } // namespace
 
 int main(int argc, char** argv) {

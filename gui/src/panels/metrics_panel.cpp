@@ -23,6 +23,7 @@ const char* task_name(runtime::TrainingTask t) {
     case runtime::TrainingTask::Training: return "Training";
     case runtime::TrainingTask::Benchmark: return "Benchmark";
     case runtime::TrainingTask::Match: return "Elo match";
+    case runtime::TrainingTask::Publish: return "Publishing";
     default: return "Idle";
     }
 }
@@ -170,6 +171,10 @@ void MetricsPanel::draw_training() {
     ImGui::SetNextItemWidth(220);
     if (ImGui::Combo("Search evaluation", &mode, "Auto (NNUE after 1M samples)\0Classical\0NNUE (always)\0"))
         app_.eval_mode.store(mode);
+    bool style = app_.strange_style.load();
+    if (ImGui::Checkbox("Strange playing style", &style)) app_.strange_style.store(style);
+    ImGui::SameLine();
+    ImGui::TextColored(palette::to_vec4(palette::kTextDim), "(unusual moves, only when a deeper check proves they are nearly as good)");
     ImGui::TextColored(palette::to_vec4(palette::kTextDim),
                        "Auto keeps the hand-crafted eval until the net has seen %s training samples (now %s).",
                        format_count(kAutoNnueMinSamples).c_str(), format_count(t.net_samples).c_str());
@@ -184,6 +189,7 @@ void MetricsPanel::draw_training() {
     ImGui::SameLine();
     ImGui::SetNextItemWidth(120);
     ImGui::SliderInt("random plies", &sp_.random_plies, 0, 16);
+    ImGui::Checkbox("in its strange style##sp", &sp_.strange_style);
     ImGui::SetNextItemWidth(w * 0.5f);
     ImGui::InputText("output file##sp", sp_out_, sizeof(sp_out_));
     ImGui::SameLine();
@@ -255,6 +261,22 @@ void MetricsPanel::draw_training() {
     ImGui::EndDisabled();
     ImGui::TextColored(palette::to_vec4(palette::kTextDim), "active: %s (%u epochs)", t.net_path.empty() ? "<in memory>" : t.net_path.c_str(),
                        t.net_epochs);
+
+    // publish the network being trained to the website (web/net) and push it to GitHub
+    section("3. Publish to the website");
+    ImGui::SetNextItemWidth(140);
+    ImGui::SliderInt("test games##pub", &pub_.games, 0, 200);
+    ImGui::SameLine();
+    ImGui::Checkbox("commit & push to GitHub", &pub_.git_push);
+    ImGui::SameLine();
+    ImGui::Checkbox("play with it even if it loses", &pub_.force_nnue);
+    ImGui::BeginDisabled(busy);
+    ImGui::PushStyleColor(ImGuiCol_Button, palette::to_vec4(palette::kAccentBlue));
+    if (ImGui::Button("Publish to website", ImVec2(200, 0))) tw->start_publish(pub_);
+    ImGui::PopStyleColor();
+    ImGui::EndDisabled();
+    ImGui::TextColored(palette::to_vec4(palette::kTextDim),
+                       "Saves this network, tests it against the classical evaluator, writes web/net and pushes it; the site updates a few minutes later.");
     ImGui::EndChild();
 }
 

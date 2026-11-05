@@ -4,17 +4,9 @@ import { t, getLang, initLang, setLang } from './i18n.js?v=__BUILD__';
 import { NetViz } from './netviz.js?v=__BUILD__';
 
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
-const LEVELS = [
-  // minMs: the move is never played sooner than this after the player's move. The three weakest levels
-  // search almost instantly, so they wait one second; otherwise the piece appears to jump by itself.
-  { key: 'lvl1', depth: 1, ms: 60, minMs: 1000 },
-  { key: 'lvl2', depth: 3, ms: 150, minMs: 1000 },
-  { key: 'lvl3', depth: 5, ms: 400, minMs: 1000 },
-  // Levels 4-6 use their whole time budget: about 1 s, 2 s and 4 s per move on a typical computer.
-  { key: 'lvl4', depth: 64, ms: 1300, minMs: 0 },
-  { key: 'lvl5', depth: 64, ms: 2600, minMs: 0 },
-  { key: 'lvl6', depth: 64, ms: 5000, minMs: 0 },
-];
+// Barracuda always plays at full strength, in its strange style (switched on in engine-worker.js):
+// about 5 seconds per move, of which a part goes to checking that an unusual move is nearly as good.
+const ENGINE = { depth: 64, ms: 5000 };
 
 // ---- no right-click menu and no text selection (remove this block, and the user-select rule in
 // style.css, to bring them back). This only stops casual copying: the page source stays readable.
@@ -24,7 +16,7 @@ document.addEventListener('dragstart', (e) => e.preventDefault());
 
 const $ = (id) => document.getElementById(id);
 const els = {
-  board: $('board'), status: $('status'), level: $('level'), color: $('color'), moves: $('moves'),
+  board: $('board'), status: $('status'), color: $('color'), moves: $('moves'),
   evalWhite: $('evalWhite'), evalLabel: $('evalLabel'), evalbar: $('evalbar'),
   thinking: $('thinking'), depth: $('depth'), nps: $('nps'), pv: $('pv'),
   promo: $('promo'), promoBox: $('promoBox'),
@@ -231,7 +223,7 @@ async function newGame() {
   maybeEngineMove();
 }
 
-async function playMove(uci, byEngine) {
+async function playMove(uci, byEngine, strange = '') {
   const san = await engine.call('san', state.startFen, movesStr(), uci);
   const mover = parseBoard(state.fen)[sqIndex(uci.slice(0, 2))]; // the piece being moved (FEN letter)
   state.moves.push(uci);
@@ -240,7 +232,8 @@ async function playMove(uci, byEngine) {
   state.selected = null;
   await refresh();
   render();
-  if (byEngine && viz && mover) viz.decide(mover, san); // the chosen piece forms out of the network
+  if (byEngine && viz && mover) viz.decide(mover, strange ? san + '!?' : san); // the chosen piece forms out of the network
+  if (strange) els.pv.textContent = t('styledNote', { m: strange });
   if (isOver()) handleGameOver();
   if (!byEngine) maybeEngineMove();
 }
@@ -248,14 +241,13 @@ async function playMove(uci, byEngine) {
 async function maybeEngineMove() {
   if (!state.ready || isOver() || turn() === state.human || state.thinking) return;
   const token = ++state.token;
-  const lvl = LEVELS[+els.level.value];
   state.thinking = true;
   renderThinking();
   renderStatus();
   let res;
   const started = performance.now();
   try {
-    res = await engine.call('search', state.startFen, movesStr(), lvl.ms, lvl.depth);
+    res = await engine.call('search', state.startFen, movesStr(), ENGINE.ms, ENGINE.depth);
   } catch (err) {
     state.thinking = false;
     state.error = t('engineError') + err.message;
@@ -263,19 +255,20 @@ async function maybeEngineMove() {
     return;
   }
   if (token !== state.token) return; // cancelled (new game / undo)
-  // fast levels answer in a few milliseconds: keep "thinking" (and the network animation) going so
-  // the move appears after a natural pause instead of jumping instantly
-  const wait = (lvl.minMs || 0) - (performance.now() - started);
-  if (wait > 0) {
-    await new Promise((r) => setTimeout(r, wait));
-    if (token !== state.token) return;
-  }
   state.thinking = false;
   renderThinking();
   const [best, score] = res.split(' ');
   if (best === 'none') { await refresh(); render(); return; }
   state.evalWhite = Number(score);
-  await playMove(best, true);
+  // did the strange style replace the textbook move? (SAN of the textbook move, for the note)
+  let strange = '';
+  try {
+    if (await engine.call('lastStyled')) {
+      const plain = await engine.call('lastObjective');
+      if (plain) strange = await engine.call('san', state.startFen, movesStr(), plain);
+    }
+  } catch (_) { /* the note is optional */ }
+  await playMove(best, true, strange);
 }
 
 async function undo() {
@@ -313,7 +306,7 @@ function gameRecord() {
     moves: movesStr(),
     result,                       // 1-0, 0-1 or 1/2-1/2 (White's point of view)
     human: state.human,
-    level: +els.level.value,
+    level: 'max',
     eval: manifestInfo ? manifestInfo.eval : 'classical',
     net: manifestInfo ? manifestInfo.version : 0,
   };
@@ -457,16 +450,13 @@ function startDrag(e, from, piece) {
 }
 
 // ---------------------------------------------------------------- boot
-function fillLevels(selected) {
-  els.level.innerHTML = LEVELS.map((l, i) => `<option value="${i}">${t(l.key)}</option>`).join('');
-  if (selected != null) { els.level.value = selected; return; }
+function loadSettings() {
   let saved = {};
   try { saved = JSON.parse(localStorage.getItem('barracuda-settings') || '{}'); } catch (_) { /* storage unavailable */ }
-  els.level.value = saved.level != null && LEVELS[saved.level] ? saved.level : 3;
   els.color.value = saved.color || 'w';
 }
 function saveSettings() {
-  try { localStorage.setItem('barracuda-settings', JSON.stringify({ level: +els.level.value, color: els.color.value })); } catch (_) { /* ignore */ }
+  try { localStorage.setItem('barracuda-settings', JSON.stringify({ color: els.color.value })); } catch (_) { /* ignore */ }
 }
 
 let netInfo = { manifest: null, nnue: false, hasNet: false };
@@ -485,7 +475,6 @@ function showManifest(m, nnueActive, hasNet) { netInfo = { manifest: m, nnue: nn
 
 function changeLanguage(next) {
   setLang(next);
-  fillLevels(+els.level.value);
   renderNet();
   render();
   renderThanks();
@@ -496,7 +485,7 @@ function changeLanguage(next) {
 
 async function boot() {
   initLang();
-  fillLevels();
+  loadSettings();
   $('langBtn').textContent = t('langButton');
   $('langBtn').lang = getLang() === 'ar' ? 'en' : 'ar';
   $('langBtn').onclick = () => changeLanguage(getLang() === 'ar' ? 'en' : 'ar');
@@ -562,7 +551,6 @@ async function boot() {
   $('newGame').onclick = () => { saveSettings(); newGame(); };
   $('undo').onclick = undo;
   $('flip').onclick = () => { state.flipped = !state.flipped; render(); };
-  els.level.onchange = saveSettings;
   els.color.onchange = saveSettings;
 }
 

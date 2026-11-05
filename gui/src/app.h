@@ -32,6 +32,7 @@ public:
     runtime::Logger log;
     runtime::NetworkRegistry nets;
     std::atomic<int> eval_mode{0}; // EvalMode
+    std::atomic<bool> strange_style{true}; // play (and self-play) with the strange style
     std::unique_ptr<runtime::SearchWorker> search;
     std::unique_ptr<runtime::TrainingWorker> training;
     Fonts fonts;

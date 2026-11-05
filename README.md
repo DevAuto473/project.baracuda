@@ -21,6 +21,7 @@ Barracuda runs fully offline with no LibTorch, ONNX, or Python. Bitboards, legal
 8. [Testing & verification](#8-testing--verification)
 9. [Known limitations](#9-known-limitations)
 10. [Play online: website on GitHub Pages](#10-play-online-website-on-github-pages)
+11. [Strange style: teaching Barracuda a personality](#11-strange-style-teaching-barracuda-a-personality)
 
 ---
 
@@ -306,7 +307,7 @@ Checks run while developing this repository (Ubuntu 24.04, GCC 13.3 and Clang 18
 
 ## 10. Play online: website on GitHub Pages
 
-`web/` is a static site where anyone can play against Barracuda. The engine is compiled to **WebAssembly** and runs inside the visitor's browser (in a Web Worker), so there is no server to run or pay for. The site has the same black and purple look as the dashboard, a drag-and-click board, six strength levels, an evaluation bar, undo, and a panel showing the published network (epochs trained, Elo, update date).
+`web/` is a static site where anyone can play against Barracuda. The engine is compiled to **WebAssembly** and runs inside the visitor's browser (in a Web Worker), so there is no server to run or pay for. The site has the same black and purple look as the dashboard, a drag-and-click board, an evaluation bar, undo, and a panel showing the published network (epochs trained, Elo, update date).
 
 **Publishing the site (one time)**
 1. Merge your branch into `main` (the deploy workflow in `.github/workflows/pages.yml` runs on `main`).
@@ -314,13 +315,17 @@ Checks run while developing this repository (Ubuntu 24.04, GCC 13.3 and Clang 18
 3. Push to `main`. The workflow builds the WebAssembly module, runs a smoke test, and deploys. The site appears at `https://<your-user>.github.io/<repo>/`.
 
 **Updating the site after more training**
+
+From the dashboard: **Metrics → Training → 3. Publish to the website → Publish to website**. It saves the network, runs the match below, writes `web/net/`, then commits and pushes that folder (uncheck *commit and push* to only write the files). Start the dashboard from inside your clone (`cd ~/barracuda && ./build/bin/barracuda`) so it finds the repository, and log in to GitHub once (`gh auth login`, or an SSH key) so the push works. The console command `publish 40` does the same.
+
+From the command line:
 ```bash
-./build/bin/barracuda-cli publish --net barracuda.bnn --games 100
-git add web/net && git commit -m "Update network" && git push
+./build/bin/barracuda-cli publish --net barracuda.bnn --games 100 --push
 ```
+(without `--push`, commit `web/net` yourself).
 `publish` plays the network against the classical evaluator, then writes `web/net/manifest.json` (epochs, samples, Elo with its margin, date) and copies the network next to it. **The site only switches to the network when it beats the classical evaluator in that match**; otherwise the manifest keeps the site on the classical evaluator and says so. `--force-nnue` overrides that, and `--games 0` skips the match. The network file is always published, because the page draws it in the **Neural network** panel: the real activations and weights, refreshed every time the search finishes a depth (the network evaluates the end of the line being analysed), with pulses travelling along the strongest connections while the engine thinks. When the network is not playing yet, the panel says so.
 
-**Levels.** Beginner, Casual and Club are shallow fixed-depth searches that answer almost instantly. Advanced, Expert and Maximum use their whole time budget, roughly 1 s, 2 s and 4 s per move on a typical computer.
+**Always full strength, in its own strange style.** There are no levels: the site always searches at maximum (up to 5 s per move, usually 2 to 3 s), and reads every reply the opponent can make before moving. On top of that it plays in Barracuda's **strange style** (see section 11): when an odd-looking move (an early rook or king walk, a flank pawn push, a piece retreat, a quiet move instead of the obvious capture) is proven by a full-depth search to be almost as good as the best move, it plays the odd one. Such moves are marked *Strange move!* under the board. The concession is tiny while the game is balanced and only grows when Barracuda is clearly winning, and it is never used when Barracuda is worse or when a mate is on the board.
 
 **Building and testing locally**
 ```bash
@@ -332,9 +337,9 @@ The WebAssembly build uses the same SSE4.1 NNUE kernels (mapped to WASM SIMD), a
 
 **One screen, any screen.** On a desktop-sized window the whole page fits without scrolling (board, controls, the neural network and the move list). On phones, tablets and narrow or short windows the board and status line stay on screen and three tabs under it (Game, Network, Moves) fill the rest; on a phone held sideways the board sits next to the tabs. Nothing overflows horizontally, the page itself never scrolls, and a tab scrolls on its own only when a very small screen needs it. Tested from 320 x 568 to 2560 x 1300, in both languages. Adding `?fen=<FEN>` to the address starts a game from that position.
 
-**Pace.** After your move, Barracuda always waits at least one second before moving on Beginner, Casual and Club (they search almost instantly, and a piece that jumps by itself is hard to follow). The network drawing keeps animating during that second. When Barracuda picks its move, the moving piece assembles from particles drawn out of the network's connections.
+**Pace.** While Barracuda thinks, the network drawing animates. When Barracuda picks its move, the moving piece assembles from particles drawn out of the network's connections.
 
-**Learning from visitors' games (optional).** When a game ends, the page can send an anonymous record of it (moves, result, strength level, a random id: no name, no IP stored by the site) to a collector you set up in `web/config.json`. Visitors can switch this off with the checkbox in the footer. If Barracuda wins and the game was really sent, the board turns black and says *"Thank you! Barracuda has been taught from the way you think, and your mind has become part of its neural network."* (Arabic: *شكرًا لك! لقد تم تعليم باراكودا على طريقة تفكيرك، وأصبح عقلك ضمن شبكته العصبية.*); when nothing was sent (no collector configured, sharing off, offline) it only says thanks for playing, so the page never claims something that did not happen.
+**Learning from visitors' games (optional).** When a game ends, the page can send an anonymous record of it (moves, result, a random id: no name, no IP stored by the site) to a collector you set up in `web/config.json`. Visitors can switch this off with the checkbox in the footer. If Barracuda wins and the game was really sent, the board turns black and says *"Thank you! Barracuda has been taught from the way you think, and your mind has become part of its neural network."* (Arabic: *شكرًا لك! لقد تم تعليم باراكودا على طريقة تفكيرك، وأصبح عقلك ضمن شبكته العصبية.*); when nothing was sent (no collector configured, sharing off, offline) it only says thanks for playing, so the page never claims something that did not happen.
 
 Nothing changes on the site by itself: the games become training data when you run the steps below.
 
@@ -360,3 +365,27 @@ cat selfplay.txt human.txt > all.txt
 **Stylesheet check.** `node web/test/css_check.mjs` fails on an unbalanced brace in `web/css/style.css` (the deploy workflow runs it): browsers silently drop the rules after such a mistake.
 
 **Languages and fonts.** The page is available in English and Arabic (button in the header, remembered per browser, and picked automatically from the browser language on first visit). Arabic switches the layout to right-to-left while the chess board itself is never mirrored. English text is set in Roca Two Bold and Arabic in IBM Plex Sans Arabic, both self-hosted in `web/fonts/` (see `web/fonts/NOTICE.txt` for licences; confirm that your Roca Two licence allows web embedding before publishing).
+
+## 11. Strange style: teaching Barracuda a personality
+
+Elo is not the goal here: the goal is an engine whose moves look wrong to people and still work.
+
+**How the style works.** After the normal search, Barracuda ranks the other legal moves by how unusual they look (rook lifts and king walks in the middlegame, flank pawns, retreats, quiet moves where a capture is expected, moving the same piece again, early queen trips). It then proves, with null-window searches at the same depth as the main search, that the strange move keeps at least `best score - margin`. The first one that passes is played. The margin is 0 when Barracuda is worse, 15 to 25 centipawns in a balanced game, and up to 2 pawns when it is clearly winning. 30% of the move time is kept aside for these proofs. Mates are never replaced.
+
+Switch it on or off: dashboard **Metrics → Training → Strange playing style** (or console `style on` / `style off`), UCI option `Style`, website always on.
+
+Measure it:
+```bash
+./build/bin/barracuda-cli style-test --games 40 --movetime 300
+```
+It plays the strange style against normal play and prints how many moves were unusual and what that costs in Elo.
+
+**Training the style into the network.** The search picks the odd moves; training makes the network *like* the positions they lead to, so over time the engine plays them on its own, even with the style off:
+
+1. **Self-play in the strange style** (dashboard: *1. Self-play*, keep *in its strange style* checked; or `barracuda-cli selfplay --games 2000 --style --out selfplay.txt`). The games are full of positions that only an engine with this taste reaches.
+2. **Add people's games** (section 10, `import-games`): the network learns what humans play against it, so its surprises are tuned to people rather than to engines.
+3. **Train with more weight on game results than on evaluations** (dashboard: lower *lambda* to about 0.3 to 0.5; CLI `train --lambda 0.4`). Results reward strange moves that actually win; evaluations only teach the classical taste.
+4. **Repeat**: train, self-play again with the new network, train again. Each round is a little more "Barracuda".
+5. **Publish** with the button. Use *force the network* only if you prefer its style even when it does not beat the classical evaluator.
+
+No engine can promise to beat every human in every game. What it does: it searches every reply before moving, never plays a strange move that a full-depth search does not justify, and never gives anything away when it is worse.

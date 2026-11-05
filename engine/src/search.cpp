@@ -100,6 +100,7 @@ bool Search::should_stop() {
     if (stop_.load(std::memory_order_relaxed)) return true;
     if (!can_stop_) return false;
     if ((limits_.nodes && nodes_ >= limits_.nodes) || (time_limited_ && elapsed_ms() >= hard_ms_)) {
+        time_up_ = true;
         stop_.store(true, std::memory_order_relaxed);
         return true;
     }
@@ -403,6 +404,7 @@ SearchResult Search::go(const Position& root, const SearchLimits& limits, const 
     pos_ = root;
     nodes_ = 0;
     can_stop_ = false;
+    time_up_ = false;
     tt_.new_search();
     use_nnue_ = nnue_active();
     if (use_nnue_) acc_->reset(*net_, pos_);
@@ -426,6 +428,12 @@ SearchResult Search::go(const Position& root, const SearchLimits& limits, const 
         soft_ms_ = std::max<std::int64_t>(1, std::min(base, left / 2));
         hard_ms_ = std::max<std::int64_t>(1, std::min(base * 4, left * 2 / 3));
     }
+    // with the style on, part of the time is kept for verifying the unusual alternatives
+    const std::int64_t full_hard_ms = hard_ms_;
+    if (style_.enabled && time_limited_) {
+        hard_ms_ = std::max<std::int64_t>(1, full_hard_ms * (100 - style_.verify_percent) / 100);
+        soft_ms_ = std::min(soft_ms_, hard_ms_);
+    }
 
     SearchResult result;
     MoveList root_moves;
@@ -435,6 +443,7 @@ SearchResult Search::go(const Position& root, const SearchLimits& limits, const 
         return result;
     }
     result.best = root_moves[0];
+    const Position root_copy = pos_;
 
     Value prev_score = 0;
     const int max_depth = std::clamp(limits.depth, 1, MAX_PLY - 2);
@@ -505,9 +514,115 @@ SearchResult Search::go(const Position& root, const SearchLimits& limits, const 
         while (!stop_.load(std::memory_order_relaxed)) std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 
+    result.objective_best = result.best;
+    if (style_.enabled && !limits.infinite) {
+        apply_style(root_copy, root_moves, full_hard_ms, result);
+        ++style_decisions_;
+        if (result.styled) ++styled_moves_;
+    }
+
     result.nodes = nodes_;
     result.time_ms = elapsed_ms();
     return result;
+}
+
+// ---------------------------------------------------------------------------
+// Strange style
+// ---------------------------------------------------------------------------
+void Search::set_style(const StyleOptions& s) {
+    style_ = s;
+    style_rng_.seed(s.seed ? s.seed : std::uint64_t(std::chrono::steady_clock::now().time_since_epoch().count()));
+}
+
+int style_margin(Value best) {
+    // the concession is paid on every styled move, so it stays small while the game is open
+    // and only grows once the advantage is large enough to absorb it
+    if (best < -40) return 0;   // in trouble: only the best move will do
+    if (best < 60) return 15;   // balanced game: almost free
+    if (best < 200) return 25;
+    if (best < 500) return 50;
+    if (best < 900) return 110;
+    return 220;                 // clearly winning: free to be bizarre
+}
+
+int move_strangeness(const Position& pos, Move m) {
+    const Piece pc = pos.piece_on(m.from());
+    const PieceType pt = type_of(pc);
+    const Color us = pos.side_to_move();
+    const int from_rank = relative_rank(us, m.from()), to_rank = relative_rank(us, m.to());
+    const int to_file = file_of(m.to());
+    const bool middlegame = pos.pieces(QUEEN) && pos.non_pawn_material(~us) > 1300;
+    int s = 0;
+    if (m.is_promotion() && m.promotion_type() != QUEEN) s += 45;                      // under-promotion
+    if (pt == KING && !m.is_castle() && middlegame) s += 30;                             // king walk
+    if (!m.is_castle() && !m.is_promotion() && !pos.see_ge(m, 0)) s += 35;              // sacrifice / piece left en prise
+    if (pt == PAWN && !m.is_capture()) {
+        const int f = file_of(m.from());
+        if (f == 0 || f == 7) s += 16;                                                    // rook-pawn push
+        else if (f == 1 || f == 6) s += 8;
+    }
+    if (pt == KNIGHT && (to_file == 0 || to_file == 7)) s += 15;                         // knight on the rim
+    if (pt == QUEEN && pos.game_ply() < 20) s += 12;                                     // early queen trip
+    if (pt != PAWN && pt != KING && to_rank < from_rank && !m.is_capture()) s += 10;     // retreat
+    if (pt == ROOK && (to_rank == 2 || to_rank == 3) && !m.is_capture()) s += 10;        // rook lift
+    if (m.is_quiet()) {                                                                   // ignoring a winning capture
+        MoveList noisy;
+        generate_moves(pos, noisy, GenType::NOISY);
+        for (Move x : noisy)
+            if (x.is_capture() && pos.see_ge(x, 1)) { s += 8; break; }
+    }
+    return s;
+}
+
+void Search::apply_style(const Position& root, const MoveList& root_moves, std::int64_t full_hard_ms, SearchResult& result) {
+    // the caller asked us to stop: play what we have
+    if (stop_.load(std::memory_order_relaxed) && !time_up_) return;
+    if (!result.best || root_moves.size < 2 || is_mate_score(result.score) || result.depth < 2) return;
+    const int margin = style_margin(result.score) * style_.margin_percent / 100;
+    if (margin <= 0) return;
+
+    struct Cand { Move m; int s; };
+    std::vector<Cand> cands;
+    for (Move m : root_moves) {
+        if (m == result.best) continue;
+        const int s = move_strangeness(root, m);
+        if (s >= 10) cands.push_back({m, s * 8 + int(style_rng_() % 8)}); // small random tie-break: never the same game twice
+    }
+    if (cands.empty()) return;
+    std::sort(cands.begin(), cands.end(), [](const Cand& a, const Cand& b) { return a.s > b.s; });
+    if (cands.size() > 6) cands.resize(6);
+
+    // resume with the time that was kept aside
+    hard_ms_ = full_hard_ms;
+    time_up_ = false;
+    stop_.store(false, std::memory_order_relaxed);
+    if (limits_.nodes) limits_.nodes = nodes_ + std::max<std::uint64_t>(1, limits_.nodes * std::uint64_t(style_.verify_percent) / 100);
+    pos_ = root;
+    if (use_nnue_) acc_->reset(*net_, pos_);
+
+    const Value threshold = result.score - margin;
+    const int depth = std::max(1, result.depth - 2);
+    for (const Cand& c : cands) {
+        if (should_stop()) break;
+        // null-window proof that the move scores at least `threshold`
+        // 1) cheap filter at reduced depth, 2) confirmation at the full depth of the main search:
+        //    a shallow search alone lets through "sacrifices" that only look sound
+        make(c.m);
+        Value v = -negamax(-threshold, -threshold + 1, depth - 1, 1, true);
+        if (v >= threshold && !stop_.load(std::memory_order_relaxed))
+            v = -negamax(-threshold, -threshold + 1, result.depth - 1, 1, true);
+        unmake();
+        if (stop_.load(std::memory_order_relaxed)) break;
+        if (v >= threshold) {
+            result.best = c.m;
+            result.ponder = Move();
+            result.pv.assign(1, c.m);
+            result.score = v;
+            result.styled = true;
+            break;
+        }
+    }
+    stop_.store(false, std::memory_order_relaxed);
 }
 
 } // namespace barracuda

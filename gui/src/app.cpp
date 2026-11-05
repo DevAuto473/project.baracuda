@@ -22,7 +22,7 @@ App::App(const Fonts& f) : fonts(f) {
     log.logf(runtime::LogLevel::Info, "Barracuda dashboard starting (NNUE SIMD backend: %s, %u hardware threads)",
              nnue::simd_backend(), std::thread::hardware_concurrency());
     training = std::make_unique<runtime::TrainingWorker>(log, nets, eval_mode); // publishes the initial network
-    search = std::make_unique<runtime::SearchWorker>(log, nets, eval_mode);
+    search = std::make_unique<runtime::SearchWorker>(log, nets, eval_mode, strange_style);
     board_ = std::make_unique<BoardPanel>(*this);
     network_ = std::make_unique<NetworkPanel>(*this);
     metrics_ = std::make_unique<MetricsPanel>(*this);
@@ -66,7 +66,7 @@ void App::execute_command(const std::string& line) {
     if (cmd == "help") {
         log.log(runtime::LogLevel::Info, "commands: help | clear | newgame | undo | flip | fen <FEN> | moves |"
                                          " play | observe | stop | bench [ms] | selfplay <games> [depth] |"
-                                         " match [games] [ms] | train [dataset] | save [file] | load [file] | eval <auto|classical|nnue> | watch <ms>");
+                                         " match [games] [ms] | style on|off | publish [games] | train [dataset] | save [file] | load [file] | eval <auto|classical|nnue> | watch <ms>");
     } else if (cmd == "newgame") {
         mode = ViewMode::Play;
         board_->new_game();
@@ -103,6 +103,13 @@ void App::execute_command(const std::string& line) {
         p.movetime_ms = std::clamp(p.movetime_ms, 10, 5000);
         training->start_match(p);
         mode = ViewMode::Observe;
+    } else if (cmd == "style") {
+        strange_style.store(rest != "off");
+        log.logf(runtime::LogLevel::Info, "strange style: %s", strange_style.load() ? "on" : "off");
+    } else if (cmd == "publish") {
+        runtime::PublishParams p;
+        if (!rest.empty()) p.games = std::clamp(std::atoi(rest.c_str()), 0, 1000);
+        training->start_publish(p);
     } else if (cmd == "selfplay") {
         runtime::SelfPlayParams p;
         std::istringstream a(rest);
