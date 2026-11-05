@@ -1,14 +1,17 @@
 // Barracuda web player: UI + game flow. The engine (WebAssembly) lives in engine-worker.js.
 import { pieceSvg } from './pieces.js?v=__BUILD__';
 import { t, getLang, initLang, setLang } from './i18n.js?v=__BUILD__';
+import { NetViz } from './netviz.js?v=__BUILD__';
 
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 const LEVELS = [
+  // Levels 1-3 are depth-limited "fast" levels and answer almost instantly (kept as they were).
+  // Levels 4-6 use their whole time budget: about 1 s, 2 s and 4 s per move on a typical computer.
   { key: 'lvl1', depth: 1, ms: 60 },
   { key: 'lvl2', depth: 3, ms: 150 },
   { key: 'lvl3', depth: 5, ms: 400 },
-  { key: 'lvl4', depth: 8, ms: 900 },
-  { key: 'lvl5', depth: 14, ms: 2000 },
+  { key: 'lvl4', depth: 64, ms: 1300 },
+  { key: 'lvl5', depth: 64, ms: 2600 },
   { key: 'lvl6', depth: 64, ms: 5000 },
 ];
 
@@ -55,6 +58,7 @@ const state = {
   thinking: false, token: 0, ready: false, evalWhite: 0, drag: null, error: null,
 };
 let engine;
+let viz = null;
 
 const turn = () => state.fen.split(' ')[1];
 const movesStr = () => state.moves.join(' ');
@@ -135,6 +139,16 @@ function renderMoves() {
 
 function renderThinking() {
   els.thinking.textContent = t(state.thinking ? 'thinkingNow' : 'idle');
+  renderViz();
+}
+
+function renderViz() {
+  if (!viz) return;
+  viz.setThinking(state.thinking);
+  const status = $('vizStatus');
+  status.classList.toggle('on', state.thinking);
+  status.textContent = state.thinking ? t('viz.thinking') : netInfo.hasNet ? t('viz.idle') : '';
+  $('vizNote').textContent = !netInfo.hasNet ? t('viz.none') : t(netInfo.nnue ? 'viz.used' : 'viz.notUsed');
 }
 
 function renderStatus() {
@@ -177,6 +191,12 @@ async function refresh() {
   state.legal = legal ? legal.split(' ') : [];
   state.status = status;
   state.inCheck = !!chk;
+  if (viz && netInfo.hasNet && !state.thinking) {
+    try {
+      const j = await engine.call('netView', state.startFen, movesStr());
+      if (j) viz.setView(JSON.parse(j));
+    } catch (_) { /* visualisation is optional */ }
+  }
 }
 
 async function newGame() {
@@ -346,10 +366,10 @@ function saveSettings() {
   try { localStorage.setItem('barracuda-settings', JSON.stringify({ level: +els.level.value, color: els.color.value })); } catch (_) { /* ignore */ }
 }
 
-let netInfo = { manifest: null, nnue: false };
+let netInfo = { manifest: null, nnue: false, hasNet: false };
 function renderNet() {
-  const { manifest: m, nnue } = netInfo;
-  $('netEval').textContent = t(nnue ? 'netNnue' : 'netClassic');
+  const { manifest: m, nnue, hasNet } = netInfo;
+  $('netEval').textContent = t(nnue ? 'netNnue' : hasNet ? 'netClassicViz' : 'netClassic');
   $('netTrained').textContent = m && m.epochs ? t('trainedFmt', { epochs: m.epochs, m: (m.samples / 1e6).toFixed(1) }) : t('notYet');
   const elo = m ? `${m.elo}${m.elo_error ? ' ± ' + m.elo_error : ''}` : '-';
   $('netElo').textContent = m ? t('eloFmt', { elo }) : '-';
@@ -358,13 +378,14 @@ function renderNet() {
   $('netUpdated').textContent = m ? new Date(m.updated).toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric' }) : '-';
   $('eloBadge').textContent = m ? `Elo ~${m.elo}` : 'Elo --';
 }
-function showManifest(m, nnueActive) { netInfo = { manifest: m, nnue: nnueActive }; renderNet(); }
+function showManifest(m, nnueActive, hasNet) { netInfo = { manifest: m, nnue: nnueActive, hasNet: !!hasNet }; renderNet(); renderViz(); }
 
 function changeLanguage(next) {
   setLang(next);
   fillLevels(+els.level.value);
   renderNet();
   render();
+  if (viz) viz.kick();
   $('langBtn').textContent = t('langButton');
   $('langBtn').lang = next === 'ar' ? 'en' : 'ar';
 }
@@ -376,11 +397,13 @@ async function boot() {
   $('langBtn').lang = getLang() === 'ar' ? 'en' : 'ar';
   $('langBtn').onclick = () => changeLanguage(getLang() === 'ar' ? 'en' : 'ar');
   render();
+  viz = new NetViz($('vizCanvas'));
   engine = new EngineClient();
   engine.onInfo = (m) => {
     if (!state.thinking) return;
+    if (m.view) { try { viz.setView(JSON.parse(m.view)); } catch (_) { /* ignore a malformed frame */ } }
     els.depth.textContent = String(m.depth);
-    els.nps.textContent = `${m.npsK} knps`;
+    els.nps.textContent = `\u2066${m.npsK} knps\u2069`; // isolate so Arabic pages keep "1200 knps" in this order
     els.pv.textContent = m.pv;
     state.evalWhite = m.score;
     renderEval();
@@ -391,7 +414,7 @@ async function boot() {
     const r = await fetch('net/manifest.json', { cache: 'no-cache' });
     if (r.ok) manifest = await r.json();
   } catch (_) { /* offline or missing: fall back to the classical evaluator */ }
-  if (manifest && manifest.eval === 'nnue' && manifest.net) {
+  if (manifest && manifest.net) { // downloaded for the visualisation even when it does not play yet
     try {
       const r = await fetch(`net/${manifest.net}?v=${manifest.version}`);
       if (r.ok) net = await r.arrayBuffer();
@@ -399,13 +422,13 @@ async function boot() {
   }
   let info;
   try {
-    info = await engine.init(net, !!net);
+    info = await engine.init(net, !!net && manifest.eval === 'nnue');
   } catch (err) {
     state.error = t('startError') + err.message;
     renderStatus();
     return;
   }
-  showManifest(manifest, info.nnue);
+  showManifest(manifest, info.nnue, info.hasNet);
   state.ready = true;
   await newGame();
 

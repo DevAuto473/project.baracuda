@@ -338,14 +338,14 @@ int cmd_publish(const Args& a) {
     if (a.has("force-classical")) use_nnue = false;
 
     const fs::path dest = out / "barracuda.bnn";
-    if (net && use_nnue) {
+    if (net) { // always shipped: the page draws it; `eval` below says whether it also plays
         fs::copy_file(net_path, dest, fs::copy_options::overwrite_existing, ec);
         if (ec) {
             std::cerr << "cannot copy network: " << ec.message() << "\n";
             return 1;
         }
     } else {
-        fs::remove(dest, ec); // the site must not ship a network it should not use
+        fs::remove(dest, ec);
     }
 
     const std::time_t now = std::time(nullptr);
@@ -360,7 +360,7 @@ int cmd_publish(const Args& a) {
        << "  \"version\": " << (long long)now << ",\n"
        << "  \"updated\": \"" << iso << "\",\n"
        << "  \"eval\": \"" << (use_nnue ? "nnue" : "classical") << "\",\n"
-       << "  \"net\": " << (net && use_nnue ? "\"barracuda.bnn\"" : "null") << ",\n"
+       << "  \"net\": " << (net ? "\"barracuda.bnn\"" : "null") << ",\n"
        << "  \"epochs\": " << (net ? net->epochs_trained() : 0) << ",\n"
        << "  \"samples\": " << (net ? (unsigned long long)net->samples_trained() : 0ULL) << ",\n"
        << "  \"elo\": " << (long long)std::llround(elo) << ",\n"
@@ -373,7 +373,7 @@ int cmd_publish(const Args& a) {
     std::printf("\npublished to %s: eval=%s, Elo ~%.0f%s\n", out.string().c_str(), use_nnue ? "nnue" : "classical", elo,
                 use_nnue ? (" +/- " + std::to_string(int(std::llround(err)))).c_str() : "");
     if (net && !use_nnue && !a.has("force-nnue"))
-        std::printf("note: the network did not beat the classical evaluator yet, so the site keeps using the classical one.\n"
+        std::printf("note: the network did not beat the classical evaluator yet, so the site only draws it and still plays with the classical one.\n"
                     "      Train longer (more self-play data / epochs) and publish again, or use --force-nnue.\n");
     std::printf("next: git add %s && git commit -m \"Update network\" && git push\n", out.string().c_str());
     return 0;

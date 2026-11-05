@@ -50,6 +50,17 @@ if (net && existsSync(net)) {
   check('load network', f('brc_load_net', 'number', ['string'])('/net.bnn') === 1);
   f('brc_set_eval', null, ['number'])(1);
   const fens = [START, 'r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4', '8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1'];
+  // network visualisation data
+  const netView = f('brc_net_view', 'string', ['string', 'string']);
+  const v = JSON.parse(netView(START, 'e2e4'));
+  check('net view shapes', v.n === v.labels.length && v.a1.length === 32 && v.a2.length === 32 && v.a3.length === 32 &&
+    v.a4.length === 1 && v.e0.length === v.n * 32 && v.e1.length === 1024 && v.e2.length === 1024 && v.e3.length === 32, `(${v.n} input pieces)`);
+  check('net view eval equals engine eval', v.cp === staticEval(START, 'e2e4'), `(${v.cp} cp)`);
+  check('net view activations in [0,1]', [...v.a1, ...v.a2, ...v.a3].every((x) => x >= 0 && x <= 1));
+  infos.length = 0;
+  search(START, '', 300, 64);
+  const withView = infos.filter((i) => i.view && i.view.startsWith('{'));
+  check('search progress carries network views', withView.length > 3 && JSON.parse(withView[withView.length - 1].view).a1.length === 32, `(${withView.length}/${infos.length})`);
   console.log('NNUE static evals (wasm): ' + fens.map(x => staticEval(x, '')).join(' '));
   t0 = Date.now();
   r = search(START, '', 1000, 64).split(' ');

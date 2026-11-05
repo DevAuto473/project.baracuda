@@ -14,18 +14,19 @@
 #include "barracuda/engine/movegen.h"
 #include "barracuda/engine/notation.h"
 #include "barracuda/engine/search.h"
+#include "barracuda/nnue/inspector.h"
 #include "barracuda/nnue/network.h"
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 #define BRC_EXPORT extern "C" EMSCRIPTEN_KEEPALIVE
 // Posts a search-progress message from the worker to the page.
-EM_JS(void, brc_js_info, (int depth, int score, int nodes_k, int nps_k, int time_ms, const char* pv), {
-    postMessage({type : 'info', depth : depth, score : score, nodesK : nodes_k, npsK : nps_k, timeMs : time_ms, pv : UTF8ToString(pv)});
+EM_JS(void, brc_js_info, (int depth, int score, int nodes_k, int nps_k, int time_ms, const char* pv, const char* view), {
+    postMessage({type : 'info', depth : depth, score : score, nodesK : nodes_k, npsK : nps_k, timeMs : time_ms, pv : UTF8ToString(pv), view : UTF8ToString(view)});
 });
 #else
 #define BRC_EXPORT extern "C"
-static void brc_js_info(int, int, int, int, int, const char*) {}
+static void brc_js_info(int, int, int, int, int, const char*, const char*) {}
 #endif
 
 using namespace barracuda;
@@ -35,6 +36,44 @@ namespace {
 std::unique_ptr<Search> g_search;
 std::shared_ptr<const nnue::Network> g_net;
 std::string g_out;
+std::string g_view_json;
+nnue::NetworkView g_view;
+
+// Compact JSON of what the network "sees" for `pos`: activations per layer and the edge weights
+// between layers (the same data the desktop dashboard draws). Empty when no network is loaded.
+const std::string& net_view_json(const Position& pos) {
+    g_view_json.clear();
+    if (!g_net) return g_view_json;
+    nnue::build_network_view(*g_net, pos, g_view);
+    std::string& s = g_view_json;
+    char b[32];
+    auto arr = [&](const std::vector<float>& a) {
+        s += '[';
+        for (std::size_t i = 0; i < a.size(); ++i) {
+            std::snprintf(b, sizeof(b), "%.3f", double(a[i]));
+            if (i) s += ',';
+            s += b;
+        }
+        s += ']';
+    };
+    const auto& in = g_view.layers[0];
+    s += "{\"n\":" + std::to_string(in.activation.size()) + ",\"labels\":[";
+    for (std::size_t i = 0; i < in.labels.size(); ++i) s += (i ? ",\"" : "\"") + in.labels[i] + "\"";
+    s += "],\"a1\":";
+    arr(g_view.layers[1].activation);
+    s += ",\"a2\":";
+    arr(g_view.layers[2].activation);
+    s += ",\"a3\":";
+    arr(g_view.layers[3].activation);
+    s += ",\"a4\":";
+    arr(g_view.layers[4].activation);
+    for (int k = 0; k < 4; ++k) {
+        s += ",\"e" + std::to_string(k) + "\":";
+        arr(g_view.edges[std::size_t(k)]);
+    }
+    s += ",\"cp\":" + std::to_string(g_view.eval_cp) + ",\"white\":" + std::to_string(g_view.eval_white_cp) + "}";
+    return s;
+}
 
 Search& search() {
     if (!g_search) {
@@ -124,6 +163,15 @@ BRC_EXPORT const char* brc_status(const char* fen, const char* moves) {
     return g_out.c_str();
 }
 
+// Network activations/weights for the position after `moves` ("" when no network is loaded).
+BRC_EXPORT const char* brc_net_view(const char* fen, const char* moves) {
+    Position pos;
+    if (!build(fen, moves, pos)) return "";
+    return net_view_json(pos).c_str();
+}
+
+BRC_EXPORT int brc_has_net() { return g_net ? 1 : 0; }
+
 BRC_EXPORT int brc_in_check(const char* fen, const char* moves) {
     Position pos;
     return build(fen, moves, pos) && pos.in_check() ? 1 : 0;
@@ -165,7 +213,14 @@ BRC_EXPORT const char* brc_search(const char* fen, const char* moves, int moveti
         std::string pv;
         for (Move m : si.pv) pv += m.to_uci() + " ";
         const int white_score = stm == WHITE ? si.score : -si.score;
-        brc_js_info(si.depth, white_score, int(si.nodes / 1000), int(si.nps / 1000), int(si.time_ms), pv.c_str());
+        // the network evaluates the leaf of the line being analysed: show what it sees there
+        Position leaf = pos;
+        for (Move m : si.pv) {
+            if (!legal_moves(leaf).contains(m)) break;
+            leaf.do_move(m);
+        }
+        brc_js_info(si.depth, white_score, int(si.nodes / 1000), int(si.nps / 1000), int(si.time_ms), pv.c_str(),
+                    net_view_json(leaf).c_str());
     });
 
     int score = stm == WHITE ? r.score : -r.score;

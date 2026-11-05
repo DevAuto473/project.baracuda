@@ -318,7 +318,9 @@ Checks run while developing this repository (Ubuntu 24.04, GCC 13.3 and Clang 18
 ./build/bin/barracuda-cli publish --net barracuda.bnn --games 100
 git add web/net && git commit -m "Update network" && git push
 ```
-`publish` plays the network against the classical evaluator, then writes `web/net/manifest.json` (epochs, samples, Elo with its margin, date) and copies the network next to it. **The site only switches to the network when it beats the classical evaluator in that match**; otherwise the manifest keeps the site on the classical evaluator and says so. `--force-nnue` overrides that, and `--games 0` skips the match.
+`publish` plays the network against the classical evaluator, then writes `web/net/manifest.json` (epochs, samples, Elo with its margin, date) and copies the network next to it. **The site only switches to the network when it beats the classical evaluator in that match**; otherwise the manifest keeps the site on the classical evaluator and says so. `--force-nnue` overrides that, and `--games 0` skips the match. The network file is always published, because the page draws it in the **Neural network** panel: the real activations and weights, refreshed every time the search finishes a depth (the network evaluates the end of the line being analysed), with pulses travelling along the strongest connections while the engine thinks. When the network is not playing yet, the panel says so.
+
+**Levels.** Beginner, Casual and Club are shallow fixed-depth searches that answer almost instantly. Advanced, Expert and Maximum use their whole time budget, roughly 1 s, 2 s and 4 s per move on a typical computer.
 
 **Building and testing locally**
 ```bash

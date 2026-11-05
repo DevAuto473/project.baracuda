@@ -18,6 +18,7 @@ async function init(net, useNnue) {
     fen: w('brc_fen', 'string', ['string', 'string']),
     status: w('brc_status', 'string', ['string', 'string']),
     inCheck: w('brc_in_check', 'number', ['string', 'string']),
+    netView: w('brc_net_view', 'string', ['string', 'string']),
     san: w('brc_san', 'string', ['string', 'string', 'string']),
     newGame: w('brc_new_game', null, []),
     search: w('brc_search', 'string', ['string', 'string', 'number', 'number']),
@@ -25,13 +26,16 @@ async function init(net, useNnue) {
     simd: w('brc_simd', 'string', []),
   };
   w('brc_init', 'number', [])();
-  let nnue = false;
-  if (net && useNnue) {
+  // The network is always loaded when published (for the visualisation); it only drives the
+  // search when the manifest says it beats the classical evaluator.
+  let loaded = false;
+  if (net) {
     M.FS.writeFile('/net.bnn', new Uint8Array(net));
-    nnue = w('brc_load_net', 'number', ['string'])('/net.bnn') === 1;
+    loaded = w('brc_load_net', 'number', ['string'])('/net.bnn') === 1;
   }
+  const nnue = loaded && !!useNnue;
   api.setEval(nnue ? 1 : 0);
-  return { simd: api.simd(), nnue };
+  return { simd: api.simd(), nnue, hasNet: loaded };
 }
 
 self.onmessage = async (e) => {
