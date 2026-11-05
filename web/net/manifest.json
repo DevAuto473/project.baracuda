@@ -1,13 +1,13 @@
 {
-  "version": 1793898271,
-  "updated": "2026-11-05T17:04:31Z",
-  "eval": "classical",
+  "version": 1793903138,
+  "updated": "2026-11-05T18:25:38Z",
+  "eval": "nnue",
   "net": "barracuda.bnn",
   "human": "human.mdl",
-  "epochs": 72,
-  "samples": 197146750,
-  "elo": 2201,
-  "elo_error": 0,
-  "elo_basis": "tactical-suite estimate of the classical evaluator",
-  "match": {"games": 100, "wins": 23, "draws": 10, "losses": 67}
+  "epochs": 78,
+  "samples": 224266120,
+  "elo": 2250,
+  "elo_error": 64,
+  "elo_basis": "classical anchor (tactical suite) + measured match advantage",
+  "match": {"games": 100, "wins": 49, "draws": 16, "losses": 35}
 }
