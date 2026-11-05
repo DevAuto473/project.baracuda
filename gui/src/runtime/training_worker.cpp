@@ -444,7 +444,7 @@ float TrainingWorker::do_benchmark(const BenchParams& p, bool quiet, int force_m
     // per-epoch benchmarks measure the network being trained, whatever the play setting is
     search_.set_eval_mode(force_mode >= 0 ? EvalMode(force_mode) : EvalMode(eval_mode_.load()));
     if (!quiet)
-        log_.logf(LogLevel::Bench, "benchmark: %zu positions @ %d ms (%s eval)", suite.size(), p.movetime_ms,
+        log_.logf(LogLevel::Bench, "benchmark: %d positions @ %d ms (%s eval)", int(suite.size()), p.movetime_ms,
                   search_.nnue_active() ? "NNUE" : "classical");
 
     const SuiteResult r = run_suite(search_, suite, p.movetime_ms, stop_, [&](const SuiteEntryResult& e, int i, int n) {

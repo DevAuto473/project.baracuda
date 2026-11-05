@@ -169,8 +169,8 @@ void NetworkPanel::draw() {
         }
         // column title (name + width on two short lines so neighbouring columns never collide)
         char sub[64];
-        if (l == 1) std::snprintf(sub, sizeof(sub), "%zu of %d shown", act.size(), layer.total_nodes);
-        else if (l == 0) std::snprintf(sub, sizeof(sub), "%zu active of %d", act.size(), layer.total_nodes);
+        if (l == 1) std::snprintf(sub, sizeof(sub), "%d of %d shown", int(act.size()), layer.total_nodes);
+        else if (l == 0) std::snprintf(sub, sizeof(sub), "%d active of %d", int(act.size()), layer.total_nodes);
         else std::snprintf(sub, sizeof(sub), "%d neuron%s", layer.total_nodes, layer.total_nodes == 1 ? "" : "s");
         const char* name = l == 1 ? "Feature Transf." : layer.name.c_str();
         ImFont* sf = app_.fonts.small;

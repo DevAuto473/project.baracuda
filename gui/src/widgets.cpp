@@ -205,7 +205,7 @@ void line_chart(const char* id, const std::vector<ChartSeries>& series, ImVec2 s
         dl->AddLine(ImVec2(a.x + (b.x - a.x) * float(idx) / denom, a.y), ImVec2(a.x + (b.x - a.x) * float(idx) / denom, b.y),
                     palette::with_alpha(palette::kText, 0.25f));
         ImGui::BeginTooltip();
-        ImGui::Text("#%zu", idx + 1);
+        ImGui::Text("#%d", int(idx) + 1);
         for (const auto& s : series) {
             if (!s.data || idx >= s.data->size()) continue;
             char buf[64];
