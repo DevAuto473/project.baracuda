@@ -2,7 +2,7 @@ name: Deploy website
 
 on:
   push:
-    branches: [main, claude/intelligent-turing-s26ab5]
+    branches: [main, DevAuto473]
     paths:
       - 'web/**'
       - 'engine/**'
