@@ -109,9 +109,26 @@ bool Search::should_stop() {
 
 Value Search::evaluate_node() {
     Value v = use_nnue_ ? net_->evaluate(acc_->current(), pos_.side_to_move()) : eval::classical(pos_);
+    if (style_.enabled && style_.hunt) v = hunt_bonus(v);
     // fade towards a draw as the 50-move counter grows
     v = v * (200 - pos_.rule50()) / 200;
     return std::clamp(v, VALUE_MATED_IN_MAX_PLY + 1, VALUE_MATE_IN_MAX_PLY - 1);
+}
+
+// "Hunt" (killer instinct): once one side is clearly winning, reward driving the losing king to
+// the edge of the board and, when the defender has little left, walking the winning king up to it.
+// This turns a won position into a mate in fewer moves instead of collecting more material.
+Value Search::hunt_bonus(Value v) const {
+    if (v > -300 && v < 300) return v;
+    const Color stm = pos_.side_to_move();
+    const Color winner = v > 0 ? stm : ~stm, loser = ~winner;
+    const Square kl = pos_.king_square(loser), kw = pos_.king_square(winner);
+    const int fl = file_of(kl), rl = rank_of(kl);
+    const int edge = std::max(3 - fl, fl - 4) + std::max(3 - rl, rl - 4); // 0 in the centre .. 6 in a corner
+    const int dist = std::abs(file_of(kw) - fl) + std::abs(rank_of(kw) - rl); // 1 .. 14
+    int bonus = 12 * edge;
+    if (pos_.non_pawn_material(loser) <= 1300 && !pos_.pieces(loser, QUEEN)) bonus += 6 * (14 - dist);
+    return Value(v + (winner == stm ? bonus : -bonus));
 }
 
 void Search::make(Move m) {
@@ -179,7 +196,7 @@ Value Search::qsearch(Value alpha, Value beta, int ply) {
     if (stop_.load(std::memory_order_relaxed)) return 0;
     seldepth_ = std::max(seldepth_, ply);
 
-    if (pos_.is_draw(ply)) return VALUE_DRAW;
+    if (pos_.is_draw(ply)) return draw_value(ply);
     if (ply >= MAX_PLY - 1) return pos_.in_check() ? VALUE_DRAW : evaluate_node();
 
     const bool in_check = pos_.in_check();
@@ -260,7 +277,7 @@ Value Search::negamax(Value alpha, Value beta, int depth, int ply, bool allow_nu
     seldepth_ = std::max(seldepth_, ply);
 
     if (!root) {
-        if (pos_.is_draw(ply)) return VALUE_DRAW;
+        if (pos_.is_draw(ply)) return draw_value(ply);
         if (ply >= MAX_PLY - 1) return in_check ? VALUE_DRAW : evaluate_node();
         // mate distance pruning
         alpha = std::max(alpha, mated_in(ply));
@@ -317,7 +334,7 @@ Value Search::negamax(Value alpha, Value beta, int depth, int ply, bool allow_nu
 
     MoveList list;
     generate_moves(pos_, list);
-    if (list.size == 0) return in_check ? mated_in(ply) : VALUE_DRAW;
+    if (list.size == 0) return in_check ? mated_in(ply) : draw_value(ply);
 
     int scores[256];
     score_moves(list, scores, tt_move, ply, false);
@@ -578,6 +595,22 @@ void Search::apply_style(const Position& root, const MoveList& root_moves, std::
     // the caller asked us to stop: play what we have
     if (stop_.load(std::memory_order_relaxed) && !time_up_) return;
     if (!result.best || root_moves.size < 2 || is_mate_score(result.score) || result.depth < 2) return;
+    if (result.score < -40) return; // in trouble: only the best move will do
+
+    // resume with the time the main search left unused
+    hard_ms_ = full_hard_ms;
+    time_up_ = false;
+    stop_.store(false, std::memory_order_relaxed);
+    if (limits_.nodes) limits_.nodes = nodes_ + std::max<std::uint64_t>(1, limits_.nodes * std::uint64_t(std::max(style_.verify_percent, 30)) / 100);
+    pos_ = root;
+    if (use_nnue_) acc_->reset(*net_, pos_);
+
+    if (style_.trap > 0 && try_trap(root_moves, result)) {
+        stop_.store(false, std::memory_order_relaxed);
+        return;
+    }
+    if (should_stop()) { stop_.store(false, std::memory_order_relaxed); return; }
+
     const int margin = style_margin(result.score) * style_.margin_percent / 100;
     if (margin <= 0) return;
 
@@ -591,14 +624,6 @@ void Search::apply_style(const Position& root, const MoveList& root_moves, std::
     if (cands.empty()) return;
     std::sort(cands.begin(), cands.end(), [](const Cand& a, const Cand& b) { return a.s > b.s; });
     if (cands.size() > 6) cands.resize(6);
-
-    // resume with the time that was kept aside
-    hard_ms_ = full_hard_ms;
-    time_up_ = false;
-    stop_.store(false, std::memory_order_relaxed);
-    if (limits_.nodes) limits_.nodes = nodes_ + std::max<std::uint64_t>(1, limits_.nodes * std::uint64_t(style_.verify_percent) / 100);
-    pos_ = root;
-    if (use_nnue_) acc_->reset(*net_, pos_);
 
     const Value threshold = result.score - margin;
     const int depth = std::max(1, result.depth - 2);
@@ -623,6 +648,92 @@ void Search::apply_style(const Position& root, const MoveList& root_moves, std::
         }
     }
     stop_.store(false, std::memory_order_relaxed);
+}
+
+// Best move for the side to move at `ply` by a shallow full-width search: the opponent model.
+Move Search::shallow_best(int ply, int depth) {
+    MoveList list;
+    generate_moves(pos_, list);
+    Move best;
+    Value best_v = -VALUE_INFINITE;
+    for (Move m : list) {
+        make(m);
+        const Value v = -negamax(-VALUE_INFINITE, VALUE_INFINITE, depth - 1, ply + 1, false);
+        unmake();
+        if (stop_.load(std::memory_order_relaxed)) return best;
+        if (v > best_v) best_v = v, best = m;
+    }
+    return best;
+}
+
+Move Search::predict_human(const Position& pos, int depth) {
+    stop_.store(false, std::memory_order_relaxed);
+    time_limited_ = false;
+    can_stop_ = false;
+    limits_ = SearchLimits{};
+    pos_ = pos;
+    use_nnue_ = nnue_active();
+    if (use_nnue_) acc_->reset(*net_, pos_);
+    return shallow_best(0, std::max(1, depth));
+}
+
+// A trap: a move that is (nearly) as good as the best one, after which the reply that looks most
+// natural - the one a shallow search prefers - is a serious mistake. The opponent model `trap`
+// (0..100) sets how much evaluation may be risked for it: against a player who keeps falling for
+// such replies the engine sets traps eagerly, against a careful one it rarely bothers.
+// pos_ is the root on entry and on exit.
+bool Search::try_trap(const MoveList& root_moves, SearchResult& result) {
+    const int risk = std::clamp(style_.trap, 0, 100) * 40 / 100; // up to 0.4 pawn
+    const Value gain = 150;                                        // the natural reply must lose at least this much
+    const Value sound = result.score - risk;
+    const Value punish = result.score + gain;
+    const int depth = std::max(1, result.depth - 1);
+
+    // most forcing moves first: checks and captures give the opponent the most chances to go wrong
+    struct Cand { Move m; int k; };
+    std::vector<Cand> cands;
+    for (Move m : root_moves) {
+        int k = int(style_rng_() % 4);
+        { Position t = pos_; t.do_move(m); if (t.in_check()) k += 40; }
+        if (pos_.piece_on(m.to()) != NO_PIECE) k += 20;
+        if (m == result.best) k += 60; // the best move itself may already be a trap
+        cands.push_back({m, k});
+    }
+    std::sort(cands.begin(), cands.end(), [](const Cand& a, const Cand& b) { return a.k > b.k; });
+    if (cands.size() > 10) cands.resize(10);
+
+    for (const Cand& c : cands) {
+        if (should_stop()) return false;
+        make(c.m);
+        const Move natural = shallow_best(1, 2);
+        bool ok = false;
+        Value v = 0;
+        if (natural && !stop_.load(std::memory_order_relaxed)) {
+            // 1) does the natural reply lose? (we are to move at ply 2)
+            make(natural);
+            const Value after = negamax(punish - 1, punish, std::max(1, depth - 1), 2, true);
+            unmake();
+            // 2) is the trap itself sound against the best defence?
+            if (after >= punish && !stop_.load(std::memory_order_relaxed)) {
+                v = c.m == result.best ? result.score : -negamax(-sound, -sound + 1, depth, 1, true);
+                ok = v >= sound;
+            }
+        }
+        unmake();
+        if (stop_.load(std::memory_order_relaxed)) return false;
+        if (ok) {
+            if (c.m != result.best) {
+                result.best = c.m;
+                result.ponder = natural;
+                result.pv.assign({c.m, natural});
+                result.score = v;
+                result.styled = true;
+            }
+            result.trap_reply = natural;
+            return true;
+        }
+    }
+    return false;
 }
 
 } // namespace barracuda

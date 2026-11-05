@@ -4,9 +4,10 @@ import { t, getLang, initLang, setLang } from './i18n.js?v=__BUILD__';
 import { NetViz } from './netviz.js?v=__BUILD__';
 
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
-// Barracuda always plays at full strength, in its strange style (switched on in engine-worker.js):
-// about 5 seconds per move, of which a part goes to checking that an unusual move is nearly as good.
+// Barracuda always plays at full strength, in its strange style (switched on in engine-worker.js),
+// up to 5 seconds per move. Draws cost it CONTEMPT centipawns, so it plays for the win.
 const ENGINE = { depth: 64, ms: 5000 };
+const CONTEMPT = 40;
 
 // ---- no right-click menu and no text selection (remove this block, and the user-select rule in
 // style.css, to bring them back). This only stops casual copying: the page source stays readable.
@@ -18,7 +19,7 @@ const $ = (id) => document.getElementById(id);
 const els = {
   board: $('board'), status: $('status'), color: $('color'), moves: $('moves'),
   evalWhite: $('evalWhite'), evalLabel: $('evalLabel'), evalbar: $('evalbar'),
-  thinking: $('thinking'), depth: $('depth'), nps: $('nps'), pv: $('pv'),
+  thinking: $('thinking'), depth: $('depth'), nps: $('nps'), pv: $('pv'), readYou: $('readyou'),
   promo: $('promo'), promoBox: $('promoBox'),
 };
 
@@ -56,7 +57,47 @@ const state = {
   status: 'ongoing', human: 'w', flipped: false, last: null, selected: null,
   thinking: false, token: 0, ready: false, evalWhite: 0, drag: null, error: null,
   finished: false, thanks: null, thanksTimer: 0,
+  pred: null, noteUntil: 0, read: { hit: 0, total: 0 },
 };
+
+// ---------------------------------------------------------------- opponent model
+// Barracuda studies the player: before each of their moves it predicts two replies, the best one
+// (from its own search) and the natural-looking one a human tends to play (a shallow search).
+// How often this player picks the natural move when it is not the best one is remembered in this
+// browser and decides how eagerly Barracuda sets traps for them.
+const MODEL_KEY = 'barracuda-opponent';
+const model = (() => {
+  try { return Object.assign({ chances: 0, falls: 0 }, JSON.parse(localStorage.getItem(MODEL_KEY) || '{}')); } catch (_) { return { chances: 0, falls: 0 }; }
+})();
+const saveModel = () => { try { localStorage.setItem(MODEL_KEY, JSON.stringify(model)); } catch (_) { /* private mode */ } };
+// 0..100; starts at 50 and follows the player's record (Laplace-smoothed), never below 15
+const trapLevel = () => Math.max(15, Math.round(100 * (model.falls + 1) / (model.chances + 2)));
+const showNote = (text) => { els.pv.textContent = text; state.noteUntil = performance.now() + 2500; };
+function renderRead() {
+  els.readYou.textContent = state.read.total ? `\u2066${state.read.hit}/${state.read.total}\u2069` : '-';
+}
+
+// Called when the human has just played `uci`: score the predictions and update the model.
+async function judgePrediction(uci) {
+  const p = state.pred;
+  state.pred = null;
+  if (!p || p.ply !== state.moves.length - 1) return; // predicted for another position
+  state.read.total++;
+  const hit = uci === p.human || uci === p.deep;
+  if (hit) state.read.hit++;
+  if (p.human && p.deep && p.human !== p.deep) { // the natural move was not the best one
+    model.chances++;
+    if (uci === p.human) model.falls++;
+    saveModel();
+  }
+  renderRead();
+  try {
+    const before = movesStr().split(' ').slice(0, -1).join(' ');
+    if (p.trap && uci === p.trap) showNote(t('trapSprung', { m: await engine.call('san', state.startFen, before, uci) }));
+    else if (hit) showNote(t('predHit', { m: await engine.call('san', state.startFen, before, uci) }));
+    else if (p.deep) showNote(t('predMiss', { m: await engine.call('san', state.startFen, before, p.deep) }));
+  } catch (_) { /* the note is optional */ }
+}
 let engine;
 let viz = null;
 let collect = null;      // {type: 'googleform'|'http', ...} from config.json, or null when nothing is collected
@@ -214,6 +255,7 @@ async function newGame() {
   state.startFen = customFen || START_FEN;
   state.moves = []; state.sans = []; state.last = null; state.selected = null; state.evalWhite = 0;
   els.pv.innerHTML = '&nbsp;'; els.depth.textContent = '-'; els.nps.textContent = '-'; renderThinking();
+  state.pred = null; state.noteUntil = 0; state.read = { hit: 0, total: 0 }; renderRead();
   // clear the old game right away instead of after the engine round-trips
   state.fen = state.startFen; state.legal = []; state.status = 'ongoing'; state.inCheck = false;
   render();
@@ -233,7 +275,8 @@ async function playMove(uci, byEngine, strange = '') {
   await refresh();
   render();
   if (byEngine && viz && mover) viz.decide(mover, strange ? san + '!?' : san); // the chosen piece forms out of the network
-  if (strange) els.pv.textContent = t('styledNote', { m: strange });
+  if (strange) showNote(t('styledNote', { m: strange }));
+  if (!byEngine) await judgePrediction(uci);
   if (isOver()) handleGameOver();
   if (!byEngine) maybeEngineMove();
 }
@@ -247,6 +290,7 @@ async function maybeEngineMove() {
   let res;
   const started = performance.now();
   try {
+    await engine.call('setOpponent', trapLevel(), CONTEMPT);
     res = await engine.call('search', state.startFen, movesStr(), ENGINE.ms, ENGINE.depth);
   } catch (err) {
     state.thinking = false;
@@ -268,7 +312,16 @@ async function maybeEngineMove() {
       if (plain) strange = await engine.call('san', state.startFen, movesStr(), plain);
     }
   } catch (_) { /* the note is optional */ }
+  let trap = '';
+  try { trap = await engine.call('lastTrap'); } catch (_) { /* optional */ }
+  const deep = res.split(' ')[5] || ''; // "<best> <score> <depth> <nodes> <best> <expected reply> ..."
   await playMove(best, true, strange);
+  if (token !== state.token || isOver()) return;
+  // what will the human play now? (kept hidden until they move)
+  let human = '';
+  try { human = await engine.call('predict', state.startFen, movesStr()); } catch (_) { /* optional */ }
+  const ply = state.moves.length;
+  if (token === state.token) state.pred = { human, deep, trap, ply };
 }
 
 async function undo() {
@@ -276,6 +329,7 @@ async function undo() {
   state.token++; // drop any running search
   state.thinking = false;
   state.finished = false;
+  state.pred = null;
   hideThanks();
   renderThinking();
   // go back to the last position where it was the human's turn
@@ -497,7 +551,7 @@ async function boot() {
     if (m.view) { try { viz.setView(JSON.parse(m.view)); } catch (_) { /* ignore a malformed frame */ } }
     els.depth.textContent = String(m.depth);
     els.nps.textContent = `\u2066${t('speedFmt', { n: m.npsK })}\u2069`; // isolate so Arabic pages keep the number order
-    els.pv.textContent = m.pv;
+    if (performance.now() > state.noteUntil) els.pv.textContent = m.pv;
     state.evalWhite = m.score;
     renderEval();
   };

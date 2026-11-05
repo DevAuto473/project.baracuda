@@ -174,7 +174,7 @@ void MetricsPanel::draw_training() {
     bool style = app_.strange_style.load();
     if (ImGui::Checkbox("Strange playing style", &style)) app_.strange_style.store(style);
     ImGui::SameLine();
-    ImGui::TextColored(palette::to_vec4(palette::kTextDim), "(unusual moves, only when a deeper check proves they are nearly as good)");
+    ImGui::TextColored(palette::to_vec4(palette::kTextDim), "(unusual moves proven nearly as good, traps, no draws, hunts the king when winning)");
     ImGui::TextColored(palette::to_vec4(palette::kTextDim),
                        "Auto keeps the hand-crafted eval until the net has seen %s training samples (now %s).",
                        format_count(kAutoNnueMinSamples).c_str(), format_count(t.net_samples).c_str());

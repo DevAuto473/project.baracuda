@@ -39,6 +39,9 @@ std::string g_out;
 std::string g_view_json;
 bool g_last_styled = false;
 std::string g_last_objective;
+std::string g_last_trap;
+std::unique_ptr<Search> g_predictor; // separate small search: predicting never disturbs the main hash table
+StyleOptions g_style;
 nnue::NetworkView g_view;
 
 // Compact JSON of what the network "sees" for `pos`: activations per layer and the edge weights
@@ -137,9 +140,30 @@ BRC_EXPORT const char* brc_simd() { return nnue::simd_backend(); }
 
 // Strange style on/off (see StyleOptions in search.h).
 BRC_EXPORT void brc_set_style(int enabled) {
-    StyleOptions so;
-    so.enabled = enabled != 0;
-    search().set_style(so);
+    g_style.enabled = enabled != 0;
+    search().set_style(g_style);
+}
+// Opponent model (0..100: how readily this player falls for natural-looking mistakes) and contempt
+// (centipawns a draw costs Barracuda). See StyleOptions.
+BRC_EXPORT void brc_set_opponent(int trap, int contempt) {
+    g_style.trap = std::clamp(trap, 0, 100);
+    g_style.contempt = std::clamp(contempt, 0, 200);
+    g_style.hunt = true;
+    search().set_style(g_style);
+}
+// After brc_search: the natural-looking reply the move sets a trap for ("" when it is no trap).
+BRC_EXPORT const char* brc_last_trap() { return g_last_trap.c_str(); }
+// The move a human would most likely play after `moves` (UCI, "" when there is none).
+BRC_EXPORT const char* brc_predict(const char* fen, const char* moves) {
+    Position pos;
+    if (!build(fen, moves, pos)) return "";
+    if (!g_predictor) {
+        g_predictor = std::make_unique<Search>(1);
+        g_predictor->set_eval_mode(EvalMode::CLASSICAL);
+    }
+    const Move m = g_predictor->predict_human(pos, 2);
+    g_out = m ? m.to_uci() : std::string();
+    return g_out.c_str();
 }
 // After brc_search: 1 if the style replaced the plain best move, and that plain best move (UCI).
 BRC_EXPORT int brc_last_styled() { return g_last_styled ? 1 : 0; }
@@ -237,6 +261,7 @@ BRC_EXPORT const char* brc_search(const char* fen, const char* moves, int moveti
 
     g_last_styled = r.styled;
     g_last_objective = r.objective_best ? r.objective_best.to_uci() : std::string();
+    g_last_trap = r.trap_reply ? r.trap_reply.to_uci() : std::string();
     int score = stm == WHITE ? r.score : -r.score;
     if (is_mate_score(r.score)) score = score > 0 ? 30000 : -30000;
     std::string pv;

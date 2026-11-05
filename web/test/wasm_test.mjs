@@ -42,6 +42,13 @@ for (const fen of [START, 'r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2
   search(fen, '', 300, 64); if (f('brc_last_styled', 'number', [])()) styledCount++;
 }
 console.log(`style changed the move in ${styledCount} of 4 test positions`);
+const predict = f('brc_predict', 'string', ['string', 'string']);
+check('predicts that a human takes a hanging queen', predict('4k3/8/8/3q4/8/8/3R4/4K3 w - - 0 1', '') === 'd2d5');
+check('prediction after a move list', /^[a-h][1-8][a-h][1-8]/.test(predict(START, 'e2e4')));
+f('brc_set_opponent', null, ['number', 'number'])(100, 40);
+r = search('6k1/5ppp/8/8/8/8/5PPP/3R2K1 w - - 0 1', '', 200, 8).split(' ');
+check('traps never replace a mate', r[0] === 'd1d8');
+check('last trap is a string', typeof f('brc_last_trap', 'string', [])() === 'string');
 r = search('4k3/8/8/3q4/8/8/3R4/4K3 w - - 0 1', '', 300, 12).split(' ');
 check('progress messages posted', infos.length > 3 && infos.every(i => i.type === 'info' && typeof i.pv === 'string'));
 check('wins the hanging queen', r[0] === 'd2d5', r.slice(0, 4).join(' '));

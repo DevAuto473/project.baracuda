@@ -48,6 +48,7 @@ struct SearchResult {
     Move best;
     Move objective_best; // what plain search preferred (differs from `best` when the style chose another move)
     bool styled = false;
+    Move trap_reply;     // set when `best` is a trap: the natural-looking reply that loses
     Move ponder;
     Value score = 0;
     int depth = 0;
@@ -72,6 +73,13 @@ struct StyleOptions {
     // measured to cost nothing, while holding back 30% cost about 50 Elo
     int verify_percent = 0;
     int margin_percent = 100; // scales style_margin()
+    // Traps: 0..100, how readily the opponent falls for the natural-looking reply (the opponent
+    // model; the website measures it from the player's own moves). 0 disables traps.
+    int trap = 0;
+    // Draws are worth -contempt centipawns to the engine: it avoids them and plays for the win.
+    int contempt = 0;
+    // Once clearly winning, steer for the mate (losing king to the edge) instead of more material.
+    bool hunt = false;
     std::uint64_t seed = 0;  // 0 = random
 };
 int style_margin(Value best_score);                 // allowed loss in centipawns
@@ -109,6 +117,10 @@ public:
     SearchResult go(const Position& root, const SearchLimits& limits, const InfoCallback& on_info = {});
     void stop() { stop_.store(true, std::memory_order_relaxed); }
 
+    // What a human would most likely play here: the best move of a very shallow search
+    // (captures and threats it sees, deep tactics it does not). Used as the opponent model.
+    Move predict_human(const Position& pos, int depth = 2);
+
     // Static evaluation of `pos` with the active evaluator (side-to-move relative).
     Value static_eval(const Position& pos) const;
 
@@ -144,6 +156,13 @@ private:
     StyleOptions style_;
     std::mt19937_64 style_rng_{12345};
     void apply_style(const Position& root, const MoveList& root_moves, std::int64_t full_hard_ms, SearchResult& result);
+    bool try_trap(const MoveList& root_moves, SearchResult& result);
+    Move shallow_best(int ply, int depth);
+    Value hunt_bonus(Value v) const;
+    Value draw_value(int ply) const {
+        // ply 0 is the engine to move: a draw costs it `contempt`, and gains the opponent as much
+        return style_.enabled ? Value((ply & 1) ? style_.contempt : -style_.contempt) : VALUE_DRAW;
+    }
 
     std::uint64_t nodes_ = 0;
     int seldepth_ = 0;

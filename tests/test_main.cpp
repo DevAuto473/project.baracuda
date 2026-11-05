@@ -389,6 +389,55 @@ TEST(strange_style) {
     std::printf("  style changed the move in %d of %zu positions\n", styled, std::size(fens));
 }
 
+TEST(traps_and_prediction) {
+    // the human model takes a hanging queen at once
+    Search s(8);
+    Position hang("4k3/8/8/3q4/8/8/3R4/4K3 w - - 0 1");
+    CHECK(s.predict_human(hang).to_uci() == "d2d5");
+    // a trap never replaces a forced mate, and is never set when the engine is worse
+    StyleOptions so;
+    so.enabled = true;
+    so.trap = 100;
+    so.contempt = 30;
+    so.seed = 5;
+    s.set_style(so);
+    SearchLimits lim;
+    lim.depth = 6;
+    SearchResult r = s.go(Position("6k1/5ppp/8/8/8/8/5PPP/3R2K1 w - - 0 1"), lim);
+    CHECK(r.best.to_uci() == "d1d8");
+    // whenever a trap is set, the natural reply really loses and the trap itself stays sound
+    const char* fens[] = {
+        "r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4",
+        "r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10",
+        "r1bq1rk1/pp2bppp/2n1pn2/3p4/2PP4/2N1PN2/PP3PPP/R2QKB1R w KQ - 0 8",
+        "rnbqkb1r/ppp2ppp/4pn2/3p4/2PP4/2N5/PP2PPPP/R1BQKBNR w KQkq - 0 4",
+        "r2qkbnr/ppp2ppp/2np4/4p3/2B1P1b1/5N2/PPPP1PPP/RNBQ1RK1 w kq - 2 5",
+    };
+    int traps = 0;
+    for (const char* f : fens) {
+        Position pos(f);
+        Search a(8), judge(8);
+        a.set_style(so);
+        lim.depth = 7;
+        const SearchResult res = a.go(pos, lim);
+        if (!res.trap_reply) continue;
+        ++traps;
+        SearchLimits deep;
+        deep.depth = 7;
+        Position after = pos;
+        after.do_move(res.best);
+        const int trap_score = -judge.go(after, deep).score;
+        judge.new_game();
+        Position fell = after;
+        fell.do_move(res.trap_reply);
+        const int punished = judge.go(fell, deep).score;
+        std::printf("  trap %s, natural reply %s: %d after best defence, %d if it falls\n", res.best.to_uci().c_str(),
+                    res.trap_reply.to_uci().c_str(), trap_score, punished);
+        CHECK(punished > trap_score + 60);
+    }
+    std::printf("  traps set in %d of %zu positions\n", traps, std::size(fens));
+}
+
 } // namespace
 
 int main(int argc, char** argv) {

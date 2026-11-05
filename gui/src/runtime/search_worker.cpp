@@ -75,7 +75,15 @@ void SearchWorker::do_inspect(const Position& pos) {
 void SearchWorker::do_go(const Go& g) {
     search_.set_network(nets_.get());
     search_.set_eval_mode(EvalMode(eval_mode_.load()));
-    { StyleOptions so; so.enabled = strange_style_.load(); search_.set_style(so); }
+    {
+        // playing a person: strange style, traps for natural-looking mistakes, no draws, hunt the king
+        StyleOptions so;
+        so.enabled = strange_style_.load();
+        so.trap = 50;
+        so.contempt = 30;
+        so.hunt = true;
+        search_.set_style(so);
+    }
     const Color stm = g.pos.side_to_move();
 
     SearchSnapshot snap;
@@ -122,6 +130,7 @@ void SearchWorker::do_go(const Go& g) {
     done.pv_san = pv_to_san(g.pos, r.pv);
     info.publish(done);
 
+    if (r.trap_reply) log_.logf(LogLevel::Search, "trap: after %s, the natural reply %s loses", r.best.to_uci().c_str(), r.trap_reply.to_uci().c_str());
     if (r.styled) log_.logf(LogLevel::Search, "strange style: played %s instead of %s", r.best.to_uci().c_str(), r.objective_best.to_uci().c_str());
 
     MoveResult mr;

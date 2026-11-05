@@ -26,6 +26,9 @@ async function init(net, useNnue) {
     setStyle: w('brc_set_style', null, ['number']),
     lastStyled: w('brc_last_styled', 'number', []),
     lastObjective: w('brc_last_objective', 'string', []),
+    setOpponent: w('brc_set_opponent', null, ['number', 'number']),
+    lastTrap: w('brc_last_trap', 'string', []),
+    predict: w('brc_predict', 'string', ['string', 'string']),
     simd: w('brc_simd', 'string', []),
   };
   w('brc_init', 'number', [])();

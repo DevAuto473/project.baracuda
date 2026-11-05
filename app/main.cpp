@@ -8,6 +8,7 @@
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <random>
 #include <mutex>
 #include <sstream>
 #include <string>
@@ -478,6 +479,69 @@ int cmd_style_test(const Args& a, std::shared_ptr<const nnue::Network> net) {
     return 0;
 }
 
+// Barracuda against a human-like opponent (the shallow "human model" the traps are aimed at):
+// with traps off and on, how often it wins and in how many moves.
+int cmd_trap_test(const Args& a, std::shared_ptr<const nnue::Network> net) {
+    const int games = int(a.num("games", 10));
+    const int ms = int(a.num("movetime", 100));
+    const int trap = int(a.num("trap", 100));
+    std::printf("Barracuda vs a human-like opponent (2-ply search, sometimes 1-ply): %d games per setting at %d ms/move\n", games, ms);
+    for (int pass = 0; pass < 2; ++pass) {
+        const bool traps = pass == 1;
+        int wins = 0, draws = 0, losses = 0, win_moves = 0, traps_set = 0, traps_sprung = 0;
+        for (int g = 0; g < games && !g_stop; ++g) {
+            std::mt19937_64 rng(std::uint64_t(1000 + g)); // same openings and same human "mood" for both settings
+            Search engine(16), human(4);
+            engine.set_network(net);
+            human.set_network(net);
+            StyleOptions so;
+            so.enabled = true;
+            so.contempt = 30;
+            so.trap = traps ? trap : 0;
+            so.margin_percent = int(a.num("margin", 100));
+            so.hunt = a.num("hunt", 1) != 0;
+            so.seed = std::uint64_t(g + 1);
+            engine.set_style(so);
+            Position pos;
+            pos.set_fen(Position::START_FEN);
+            for (int i = 0; i < 4; ++i) { // varied openings
+                const MoveList l = legal_moves(pos);
+                pos.do_move(l[std::size_t(rng() % l.size)]);
+            }
+            const Color us = (g & 1) ? BLACK : WHITE;
+            Move expected;
+            std::string reason;
+            GameResult res = GameResult::ONGOING;
+            int plies = 0;
+            for (; plies < 300 && (res = game_result(pos, &reason)) == GameResult::ONGOING && !g_stop; ++plies) {
+                Move m;
+                if (pos.side_to_move() == us) {
+                    SearchLimits lim;
+                    lim.movetime_ms = ms;
+                    const SearchResult r = engine.go(pos, lim);
+                    m = r.best;
+                    expected = r.trap_reply;
+                    if (expected) ++traps_set;
+                } else {
+                    m = human.predict_human(pos, rng() % 5 == 0 ? 1 : 2);
+                    if (expected && m == expected) ++traps_sprung;
+                    expected = Move();
+                }
+                if (!m) break;
+                pos.do_move(m);
+            }
+            const bool white_won = res == GameResult::WHITE_WINS, black_won = res == GameResult::BLACK_WINS;
+            if ((white_won && us == WHITE) || (black_won && us == BLACK)) ++wins, win_moves += (plies + 1) / 2;
+            else if (white_won || black_won) ++losses;
+            else ++draws;
+        }
+        std::printf("traps %-3s: +%d =%d -%d   average win in %.1f moves   traps set %d, fallen into %d\n", traps ? "on" : "off", wins,
+                    draws, losses, wins ? double(win_moves) / wins : 0.0, traps_set, traps_sprung);
+        std::fflush(stdout);
+    }
+    return 0;
+}
+
 int cmd_suite(const Args& a, std::shared_ptr<const nnue::Network> net) {
     std::vector<SuitePosition> suite;
     if (a.has("file")) {
@@ -654,6 +718,7 @@ void usage() {
         "  barracuda-cli bench [depth]         fixed-depth node/speed benchmark\n"
         "  barracuda-cli selfplay --games N --depth D [--nodes N] [--threads T] [--style] [--out selfplay.txt]\n"
         "  barracuda-cli style-test [--games 20] [--movetime 200]   strange style vs normal play (how often, how costly)\n"
+        "  barracuda-cli trap-test [--games 10] [--movetime 100]    traps on/off against a human-like opponent (moves to win)\n"
         "  barracuda-cli train --data selfplay.txt [--out barracuda.bnn] [--net init.bnn] [--epochs N]\n"
         "                      [--batch N] [--lr X] [--lambda X] [--threads N] [--max-samples N]\n"
         "  barracuda-cli suite [--file wac.epd] [--movetime ms]   tactical suite + Elo estimate\n"
@@ -697,6 +762,7 @@ int main(int argc, char** argv) {
     if (sub == "suite") return cmd_suite(args, net);
     if (sub == "match") return cmd_match(args, net);
     if (sub == "style-test") return cmd_style_test(args, net);
+    if (sub == "trap-test") return cmd_trap_test(args, net);
     if (sub == "publish") return cmd_publish(args);
     if (sub == "import-games") return cmd_import_games(args, net);
     usage();
