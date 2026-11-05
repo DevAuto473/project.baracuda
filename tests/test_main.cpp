@@ -2,6 +2,7 @@
 #include <atomic>
 #include <cmath>
 #include <cstdio>
+#include <filesystem>
 #include <fstream>
 #include <functional>
 #include <sstream>
@@ -442,6 +443,9 @@ TEST(traps_and_prediction) {
     std::printf("  traps set in %d of %zu positions\n", traps, std::size(fens));
 }
 
+// A file name in the system's temporary folder (works on Windows too, where /tmp does not exist).
+std::string temp_file(const char* name) { return (std::filesystem::temp_directory_path() / name).string(); }
+
 TEST(import_pgn) {
     // Lichess-style PGN: comments with [%eval], clock tags, a game outside the rating window, a short game
     const std::string game =
@@ -461,7 +465,7 @@ TEST(import_pgn) {
     ImportPgnStats st;
     std::atomic<bool> stop{false};
     std::string err;
-    const std::string out = "/tmp/barracuda_import_pgn_test.txt";
+    const std::string out = temp_file("barracuda_import_pgn_test.txt");
     CHECK(import_pgn(in, out, o, nullptr, stop, st, &err));
     CHECK(st.games_seen == 3 && st.games_used == 1 && st.rejected_elo == 1 && st.rejected_short == 1);
     CHECK(st.positions > 10 && st.from_pgn_eval == 2); // the two evaluated opening positions cost no search
@@ -477,9 +481,9 @@ TEST(import_pgn) {
     o2.moves_only = true;
     o2.moves_every = 1;
     o2.skip_plies = 0;
-    o2.moves_out = "/tmp/barracuda_import_moves_test.txt";
+    o2.moves_out = temp_file("barracuda_import_moves_test.txt");
     ImportPgnStats st2;
-    CHECK(import_pgn(in2, "/tmp/never_written.txt", o2, nullptr, stop, st2, &err));
+    CHECK(import_pgn(in2, temp_file("never_written.txt"), o2, nullptr, stop, st2, &err));
     CHECK(st2.games_used == 1 && st2.moves_written == 45 && st2.positions == 0);
     std::ifstream mf(o2.moves_out);
     int legal_lines = 0, captures = 0;
@@ -508,7 +512,7 @@ TEST(human_model) {
     Search player(4);
     player.set_eval_mode(EvalMode::CLASSICAL);
     std::mt19937_64 rng(7);
-    const std::string path = "/tmp/barracuda_human_moves_test.txt";
+    const std::string path = temp_file("barracuda_human_moves_test.txt");
     {
         std::ofstream out(path);
         for (int g = 0; g < 150; ++g) {
@@ -549,12 +553,12 @@ TEST(human_model) {
     for (const RankedMove& x : r) sum += x.p;
     CHECK(r.size() == 20 && std::fabs(sum - 1.0f) < 1e-4f && r[0].p >= r[1].p);
     // save / load round trip
-    CHECK(model.save("/tmp/barracuda_human_test.mdl"));
-    const auto back = HumanModel::load("/tmp/barracuda_human_test.mdl");
+    CHECK(model.save(temp_file("barracuda_human_test.mdl")));
+    const auto back = HumanModel::load(temp_file("barracuda_human_test.mdl"));
     CHECK(back && std::fabs(back->w[6] - model.w[6]) < 1e-5f && back->samples == model.samples);
-    CHECK(!HumanModel::load("/tmp/barracuda_human_moves_test.txt"));
+    CHECK(!HumanModel::load(temp_file("barracuda_human_moves_test.txt")));
     std::remove(path.c_str());
-    std::remove("/tmp/barracuda_human_test.mdl");
+    std::remove(temp_file("barracuda_human_test.mdl").c_str());
 }
 
 } // namespace
