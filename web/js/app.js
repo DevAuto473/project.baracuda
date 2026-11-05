@@ -5,8 +5,8 @@ import { NetViz } from './netviz.js?v=__BUILD__';
 
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 // Barracuda always plays at full strength, in its strange style (switched on in engine-worker.js),
-// up to 5 seconds per move. Draws cost it CONTEMPT centipawns, so it plays for the win.
-const ENGINE = { depth: 64, ms: 5000 };
+// up to 3 seconds per move (it used to be 5: with traps and attack search every reply felt like a freeze). Draws cost it CONTEMPT centipawns, so it plays for the win.
+const ENGINE = { depth: 64, ms: 3000 };
 const CONTEMPT = 40;
 
 // ---- no right-click menu and no text selection (remove this block, and the user-select rule in
