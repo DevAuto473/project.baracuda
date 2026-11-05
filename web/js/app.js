@@ -5,14 +5,15 @@ import { NetViz } from './netviz.js?v=__BUILD__';
 
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 const LEVELS = [
-  // Levels 1-3 are depth-limited "fast" levels and answer almost instantly (kept as they were).
+  // minMs: the move is never played sooner than this after the player's move. The three weakest levels
+  // search almost instantly, so they wait one second; otherwise the piece appears to jump by itself.
+  { key: 'lvl1', depth: 1, ms: 60, minMs: 1000 },
+  { key: 'lvl2', depth: 3, ms: 150, minMs: 1000 },
+  { key: 'lvl3', depth: 5, ms: 400, minMs: 1000 },
   // Levels 4-6 use their whole time budget: about 1 s, 2 s and 4 s per move on a typical computer.
-  { key: 'lvl1', depth: 1, ms: 60 },
-  { key: 'lvl2', depth: 3, ms: 150 },
-  { key: 'lvl3', depth: 5, ms: 400 },
-  { key: 'lvl4', depth: 64, ms: 1300 },
-  { key: 'lvl5', depth: 64, ms: 2600 },
-  { key: 'lvl6', depth: 64, ms: 5000 },
+  { key: 'lvl4', depth: 64, ms: 1300, minMs: 0 },
+  { key: 'lvl5', depth: 64, ms: 2600, minMs: 0 },
+  { key: 'lvl6', depth: 64, ms: 5000, minMs: 0 },
 ];
 
 const $ = (id) => document.getElementById(id);
@@ -56,9 +57,13 @@ const state = {
   startFen: START_FEN, moves: [], sans: [], fen: START_FEN, legal: [], inCheck: false,
   status: 'ongoing', human: 'w', flipped: false, last: null, selected: null,
   thinking: false, token: 0, ready: false, evalWhite: 0, drag: null, error: null,
+  finished: false, thanks: null, thanksTimer: 0,
 };
 let engine;
 let viz = null;
+let collect = null;      // {type: 'googleform'|'http', ...} from config.json, or null when nothing is collected
+let customFen = null;    // optional ?fen=... start position
+let manifestInfo = null;
 
 const turn = () => state.fen.split(' ')[1];
 const movesStr = () => state.moves.join(' ');
@@ -206,11 +211,13 @@ async function newGame() {
   if (side === 'r') side = Math.random() < 0.5 ? 'w' : 'b';
   state.human = side;
   state.flipped = side === 'b';
-  state.startFen = START_FEN;
+  hideThanks();
+  state.finished = false;
+  state.startFen = customFen || START_FEN;
   state.moves = []; state.sans = []; state.last = null; state.selected = null; state.evalWhite = 0;
   els.pv.innerHTML = '&nbsp;'; els.depth.textContent = '-'; els.nps.textContent = '-'; renderThinking();
   // clear the old game right away instead of after the engine round-trips
-  state.fen = START_FEN; state.legal = []; state.status = 'ongoing'; state.inCheck = false;
+  state.fen = state.startFen; state.legal = []; state.status = 'ongoing'; state.inCheck = false;
   render();
   await engine.call('newGame');
   await refresh();
@@ -220,12 +227,15 @@ async function newGame() {
 
 async function playMove(uci, byEngine) {
   const san = await engine.call('san', state.startFen, movesStr(), uci);
+  const mover = parseBoard(state.fen)[sqIndex(uci.slice(0, 2))]; // the piece being moved (FEN letter)
   state.moves.push(uci);
   state.sans.push(san);
   state.last = [sqIndex(uci.slice(0, 2)), sqIndex(uci.slice(2, 4))];
   state.selected = null;
   await refresh();
   render();
+  if (byEngine && viz && mover) viz.decide(mover, san); // the chosen piece forms out of the network
+  if (isOver()) handleGameOver();
   if (!byEngine) maybeEngineMove();
 }
 
@@ -237,6 +247,7 @@ async function maybeEngineMove() {
   renderThinking();
   renderStatus();
   let res;
+  const started = performance.now();
   try {
     res = await engine.call('search', state.startFen, movesStr(), lvl.ms, lvl.depth);
   } catch (err) {
@@ -246,6 +257,13 @@ async function maybeEngineMove() {
     return;
   }
   if (token !== state.token) return; // cancelled (new game / undo)
+  // fast levels answer in a few milliseconds: keep "thinking" (and the network animation) going so
+  // the move appears after a natural pause instead of jumping instantly
+  const wait = (lvl.minMs || 0) - (performance.now() - started);
+  if (wait > 0) {
+    await new Promise((r) => setTimeout(r, wait));
+    if (token !== state.token) return;
+  }
   state.thinking = false;
   renderThinking();
   const [best, score] = res.split(' ');
@@ -258,6 +276,8 @@ async function undo() {
   if (!state.ready || !state.moves.length) return;
   state.token++; // drop any running search
   state.thinking = false;
+  state.finished = false;
+  hideThanks();
   renderThinking();
   // go back to the last position where it was the human's turn
   do {
@@ -270,6 +290,83 @@ async function undo() {
   state.selected = null;
   render();
   maybeEngineMove(); // when the human plays Black and undoes the first move, the engine opens again
+}
+
+// ---------------------------------------------------------------- learning from games
+const shareEnabled = () => {
+  try { return localStorage.getItem('barracuda-share') !== '0'; } catch (_) { return true; }
+};
+
+function gameRecord() {
+  const [result] = state.status.split(' ');
+  return {
+    v: 1,
+    id: (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2)),
+    t: new Date().toISOString(),
+    start: state.startFen === START_FEN ? 'startpos' : state.startFen,
+    moves: movesStr(),
+    result,                       // 1-0, 0-1 or 1/2-1/2 (White's point of view)
+    human: state.human,
+    level: +els.level.value,
+    eval: manifestInfo ? manifestInfo.eval : 'classical',
+    net: manifestInfo ? manifestInfo.version : 0,
+  };
+}
+
+// Fire-and-forget upload of the anonymous game record (moves + result only). Returns true when sent.
+async function submitGame(rec) {
+  if (!collect || !shareEnabled() || !rec.moves) return false;
+  try {
+    if (collect.type === 'googleform') {
+      await fetch(collect.formUrl, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ [collect.entry]: JSON.stringify(rec) }) });
+    } else if (collect.type === 'http') {
+      await fetch(collect.url, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, body: JSON.stringify(rec) });
+    } else {
+      return false;
+    }
+    return true;
+  } catch (_) {
+    return false; // offline or blocked: the game is simply not saved
+  }
+}
+
+const engineWon = () => {
+  const [res] = state.status.split(' ');
+  return (res === '1-0' && state.human === 'b') || (res === '0-1' && state.human === 'w');
+};
+
+function handleGameOver() {
+  if (state.finished) return;
+  state.finished = true;
+  const sending = submitGame(gameRecord());
+  if (!engineWon()) return;
+  // let the player see the final position for a moment, then turn the board black and say thanks
+  const pause = new Promise((r) => { state.thanksTimer = setTimeout(r, 1500); });
+  Promise.all([sending, pause]).then(([sent]) => { if (state.finished && isOver()) showThanks(sent); });
+}
+
+function renderThanks() {
+  if (!state.thanks) return;
+  const { sent } = state.thanks;
+  $('thanksTitle').textContent = t('thanks.title');
+  // the "learned from you" message is only shown when the game really was saved for training
+  $('thanksMsg').textContent = t(sent ? 'thanks.msg' : 'thanks.plain');
+  $('thanksNote').textContent = sent ? t('thanks.sent') : collect && !shareEnabled() ? t('thanks.off') : '';
+}
+function showThanks(sent) {
+  state.thanks = { sent };
+  renderThanks();
+  const o = $('boardOverlay');
+  o.hidden = false;
+  requestAnimationFrame(() => o.classList.add('show'));
+}
+function hideThanks() {
+  clearTimeout(state.thanksTimer);
+  state.thanks = null;
+  const o = $('boardOverlay');
+  o.classList.remove('show');
+  o.hidden = true;
 }
 
 // ---------------------------------------------------------------- input
@@ -385,6 +482,7 @@ function changeLanguage(next) {
   fillLevels(+els.level.value);
   renderNet();
   render();
+  renderThanks();
   if (viz) viz.kick();
   $('langBtn').textContent = t('langButton');
   $('langBtn').lang = next === 'ar' ? 'en' : 'ar';
@@ -428,7 +526,19 @@ async function boot() {
     renderStatus();
     return;
   }
+  manifestInfo = manifest;
   showManifest(manifest, info.nnue, info.hasNet);
+  try { // optional: where anonymous games are sent (see README)
+    const r = await fetch('config.json', { cache: 'no-cache' });
+    if (r.ok) { const c = await r.json(); collect = c && c.collect && c.collect.type ? c.collect : null; }
+  } catch (_) { /* no config: nothing is collected */ }
+  $('shareWrap').hidden = !collect;
+  $('shareBox').checked = shareEnabled();
+  $('shareBox').onchange = (e) => { try { localStorage.setItem('barracuda-share', e.target.checked ? '1' : '0'); } catch (_) { /* ignore */ } };
+  $('thanksNew').onclick = () => { saveSettings(); newGame(); };
+  $('thanksShow').onclick = hideThanks;
+  const wanted = new URLSearchParams(location.search).get('fen'); // e.g. ?fen=<FEN> starts from that position
+  if (wanted) { const f = await engine.call('fen', wanted, ''); if (f && !f.startsWith('!')) customFen = f; }
   state.ready = true;
   await newGame();
 

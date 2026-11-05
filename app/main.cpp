@@ -12,6 +12,7 @@
 #include <sstream>
 #include <string>
 #include <thread>
+#include <unordered_set>
 #include <vector>
 
 #include "barracuda/engine/match.h"
@@ -288,6 +289,131 @@ int cmd_match(const Args& a, std::shared_ptr<const nnue::Network> net) {
     return 0;
 }
 
+// ---- learning from the website's games ------------------------------------------------------------
+// Each collected game is one JSON object: {"v":1,"start":"startpos|<fen>","moves":"e2e4 e7e5 ...","result":"1-0",...}
+// (JSON lines, or the CSV a Google Form produces - quotes doubled). Every quiet position after the opening
+// becomes a training sample "<fen> | <white score cp> | <result>", the same format the trainer reads.
+std::vector<std::string> extract_json_objects(const std::string& text) {
+    std::vector<std::string> out;
+    int depth = 0;
+    bool in_str = false;
+    std::size_t begin = 0;
+    for (std::size_t i = 0; i < text.size(); ++i) {
+        const char c = text[i];
+        if (depth > 0 && in_str) { // string state only matters inside an object (CSV cells are wrapped in quotes)
+            if (c == '\\') ++i;
+            else if (c == '"') in_str = false;
+            continue;
+        }
+        if (depth > 0 && c == '"') in_str = true;
+        else if (c == '{') {
+            if (depth++ == 0) begin = i;
+        } else if (c == '}' && depth > 0 && --depth == 0) {
+            out.push_back(text.substr(begin, i - begin + 1));
+        }
+    }
+    return out;
+}
+
+std::string json_string_field(const std::string& obj, const std::string& key) {
+    const std::string needle = "\"" + key + "\"";
+    const auto k = obj.find(needle);
+    if (k == std::string::npos) return {};
+    auto p = obj.find(':', k + needle.size());
+    if (p == std::string::npos) return {};
+    p = obj.find('"', p + 1);
+    if (p == std::string::npos) return {};
+    const auto e = obj.find('"', p + 1);
+    return e == std::string::npos ? std::string{} : obj.substr(p + 1, e - p - 1);
+}
+
+int cmd_import_games(const Args& a, std::shared_ptr<const nnue::Network> net) {
+    const std::string in_path = a.get("in");
+    const std::string out_path = a.get("out", "human.txt");
+    if (in_path.empty()) {
+        std::cerr << "usage: barracuda-cli import-games --in games.csv|games.jsonl [--out human.txt] [--depth 6] [--skip-plies 8]\n";
+        return 1;
+    }
+    std::ifstream f(in_path);
+    if (!f) {
+        std::cerr << "cannot open '" << in_path << "'\n";
+        return 1;
+    }
+    std::stringstream buf;
+    buf << f.rdbuf();
+    const std::string text = buf.str();
+    auto usable = [](const std::vector<std::string>& v) {
+        for (const std::string& o : v)
+            if (!json_string_field(o, "moves").empty() && !json_string_field(o, "result").empty()) return true;
+        return false;
+    };
+    auto objs = extract_json_objects(text);
+    if (!usable(objs)) { // CSV export: the JSON is quoted and its quotes are doubled
+        std::string un;
+        for (std::size_t i = 0; i < text.size(); ++i) {
+            if (text[i] == '"' && i + 1 < text.size() && text[i + 1] == '"') ++i;
+            un += text[i];
+        }
+        objs = extract_json_objects(un);
+    }
+
+    Search search(32);
+    search.set_network(net);
+    const int depth = int(a.num("depth", 6));
+    const int skip = int(a.num("skip-plies", 8));
+    std::ofstream out(out_path, std::ios::trunc);
+    if (!out) {
+        std::cerr << "cannot write '" << out_path << "'\n";
+        return 1;
+    }
+    std::unordered_set<Key> seen;
+    int games = 0, bad = 0;
+    std::uint64_t positions = 0;
+    for (const std::string& o : objs) {
+        const std::string res = json_string_field(o, "result");
+        const std::string moves = json_string_field(o, "moves");
+        const std::string start = json_string_field(o, "start");
+        const char* res_str = res == "1-0" ? "1.0" : res == "0-1" ? "0.0" : res == "1/2-1/2" ? "0.5" : nullptr;
+        if (!res_str || moves.empty()) { ++bad; continue; }
+        Position pos;
+        if (!start.empty() && start != "startpos" && !pos.set_fen(start)) { ++bad; continue; }
+        std::vector<Move> line;
+        {
+            Position tmp = pos;
+            std::istringstream ss(moves);
+            std::string tok;
+            bool ok = true;
+            while (ss >> tok) {
+                const Move m = parse_uci_move(tmp, tok);
+                if (!m) { ok = false; break; }
+                line.push_back(m);
+                tmp.do_move(m);
+            }
+            if (!ok || line.empty()) { ++bad; continue; }
+        }
+        ++games;
+        for (std::size_t i = 0; i < line.size(); ++i) {
+            const Move m = line[i];
+            if (int(i) >= skip && !pos.in_check() && m.is_quiet() && game_result(pos) == GameResult::ONGOING &&
+                seen.insert(pos.key()).second) {
+                SearchLimits lim;
+                lim.depth = depth;
+                const SearchResult r = search.go(pos, lim);
+                if (r.best && !is_mate_score(r.score)) {
+                    const int white = pos.side_to_move() == WHITE ? r.score : -r.score;
+                    out << pos.fen() << " | " << white << " | " << res_str << "\n";
+                    ++positions;
+                }
+            }
+            pos.do_move(m);
+        }
+    }
+    std::printf("games: %d used, %d skipped (invalid)  ->  %llu training positions written to %s\n", games, bad,
+                (unsigned long long)positions, out_path.c_str());
+    std::printf("next: cat selfplay.txt %s > all.txt && barracuda-cli train --data all.txt --net barracuda.bnn\n", out_path.c_str());
+    return 0;
+}
+
 // Writes the website's network + manifest.json. The match decides whether the site uses the network:
 // it is only switched on when it actually beats the classical evaluator (or with --force-nnue).
 int cmd_publish(const Args& a) {
@@ -552,6 +678,7 @@ void usage() {
         "  barracuda-cli train --data selfplay.txt [--out barracuda.bnn] [--net init.bnn] [--epochs N]\n"
         "                      [--batch N] [--lr X] [--lambda X] [--threads N] [--max-samples N]\n"
         "  barracuda-cli suite [--file wac.epd] [--movetime ms]   tactical suite + Elo estimate\n"
+        "  barracuda-cli import-games --in games.csv|jsonl [--out human.txt] [--depth 6]   website games -> training data\n"
         "  barracuda-cli publish [--net barracuda.bnn] [--out web/net] [--games 40]   write the website network + manifest\n"
         "  barracuda-cli match [--games N] [--movetime ms] [--net f.bnn]   NNUE vs classical, Elo +/- margin\n\n"
         "  Global: --net <file.bnn> (default: ./barracuda.bnn if present)  --classical\n",
@@ -591,6 +718,7 @@ int main(int argc, char** argv) {
     if (sub == "suite") return cmd_suite(args, net);
     if (sub == "match") return cmd_match(args, net);
     if (sub == "publish") return cmd_publish(args);
+    if (sub == "import-games") return cmd_import_games(args, net);
     usage();
     return sub == "help" || sub == "-h" ? 0 : 1;
 }

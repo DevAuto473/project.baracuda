@@ -3,6 +3,7 @@
 // While the engine is thinking, light pulses travel along the strongest connections and each new
 // search iteration flashes the graph (new data from the network is arriving).
 import { t, isRtl } from './i18n.js?v=__BUILD__';
+import { pieceSvg } from './pieces.js?v=__BUILD__';
 
 const LAYER_COLORS = [[200, 200, 200], [0, 229, 255], [90, 150, 255], [232, 121, 249], [63, 230, 140]];
 const CYAN = [0, 229, 255];
@@ -25,6 +26,36 @@ function placeholderView() {
   };
 }
 
+// ---- piece silhouettes as point clouds (the decision "forms" out of the network) ----
+const pointCache = new Map();
+function piecePoints(letter) {
+  if (!pointCache.has(letter)) {
+    pointCache.set(letter, new Promise((resolve) => {
+      const svg = pieceSvg(letter).replace('<svg ', '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" ');
+      const img = new Image();
+      img.onload = () => {
+        const c = document.createElement('canvas');
+        c.width = c.height = 200;
+        const g = c.getContext('2d');
+        g.drawImage(img, 0, 0, 200, 200);
+        const data = g.getImageData(0, 0, 200, 200).data;
+        const pts = [];
+        for (let y = 2; y < 200; y += 4) {
+          for (let x = 2; x < 200; x += 4) {
+            if (data[(y * 200 + x) * 4 + 3] > 120) pts.push([(x + (Math.random() - 0.5) * 2) / 200, (y + (Math.random() - 0.5) * 2) / 200]);
+          }
+        }
+        resolve({ pts, img });
+      };
+      img.onerror = () => resolve({ pts: [], img: null });
+      img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+    }));
+  }
+  return pointCache.get(letter);
+}
+const ease = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+const reduceMotion = () => window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
 export class NetViz {
   constructor(canvas) {
     this.canvas = canvas;
@@ -37,12 +68,39 @@ export class NetViz {
     this.view = null;
     this.shown = [[], [], [], [], []];
     this.pulses = [];
+    this.decision = null; // {letter, san, born, parts[], img, dissolveAt}
+    this.ring = null;
+    this.pos = null;
     this.setView(null);
     new ResizeObserver(() => this.resize()).observe(canvas);
     this.resize();
   }
 
-  setThinking(on) { this.thinking = on; this.kick(); }
+  setThinking(on) {
+    if (on && !this.thinking && this.decision && this.decision.dissolveAt == null) this.decision.dissolveAt = this.time; // next search: the old decision fades
+    this.thinking = on;
+    this.kick();
+  }
+
+  // The engine has chosen a move: the moving piece assembles out of the network's neurons and connections.
+  async decide(letter, san) {
+    const { pts, img } = await piecePoints(letter);
+    if (!pts.length) return;
+    const parts = pts.map(([tx, ty]) => {
+      // start on a random strong connection: the particles are pulled out of the graph itself
+      let sx = null, sy = null;
+      if (this.pulses.length && this.pos) {
+        const e = this.pulses[(Math.random() * this.pulses.length) | 0], f = Math.random();
+        const a = this.pos[e.k] && this.pos[e.k][e.s], b = this.pos[e.k + 1] && this.pos[e.k + 1][e.d];
+        if (a && b) { sx = a[0] + (b[0] - a[0]) * f; sy = a[1] + (b[1] - a[1]) * f; } // fixed start point on the connection
+      }
+      return { tx, ty, sx, sy, delay: Math.random() * 0.45, dur: 0.8 + Math.random() * 0.7, jx: Math.random() * 6.28, hue: Math.random() < 0.55 ? 0 : 1 };
+    });
+    this.decision = { letter, san, born: this.time, parts, img, dissolveAt: null };
+    this.ring = this.time;
+    this.flash = 1;
+    this.kick();
+  }
 
   // v = parsed JSON from brc_net_view / a search info message, or null for the placeholder
   setView(v) {
@@ -94,7 +152,7 @@ export class NetViz {
     const dt = this.last ? Math.min(0.1, (ts - this.last) / 1000) : 0.016;
     this.last = ts;
     this.time += dt;
-    let moving = this.thinking || this.flash > 0.01;
+    let moving = this.thinking || this.flash > 0.01 || !!this.decision;
     const k = Math.min(1, dt * 9);
     for (let l = 0; l < 5; l++) {
       const cur = this.shown[l], tg = this.target[l];
@@ -106,6 +164,7 @@ export class NetViz {
     }
     this.flash = Math.max(0, this.flash - dt * 2.2);
     this.draw();
+    if (this.decision && this.decision.dissolveAt != null && this.time - this.decision.dissolveAt > 0.8) this.decision = null;
     if (moving) this.kick(); else this.last = 0;
   }
 
@@ -119,9 +178,11 @@ export class NetViz {
     const fam = getComputedStyle(document.body).fontFamily;
     const small = `600 ${w < 520 ? 10 : 12}px ${fam}`;
     const narrow = w < 520;
-    const left = narrow ? 14 : 70, right = w - (narrow ? 56 : 120), top = narrow ? 34 : 44, bottom = h - 12;
+    const pieceSize = Math.max(56, Math.min(h * 0.5, w * 0.17, 190));
+    const left = narrow ? 14 : 70, right = w - (narrow ? 56 + pieceSize * 0.6 : 40 + pieceSize + 40), top = narrow ? 34 : 44, bottom = h - 12;
     const L = 5;
     const pos = [];
+    this.pos = pos;
     let radius = 7;
     for (let l = 0; l < L; l++) {
       const n = this.sizes[l];
@@ -209,15 +270,75 @@ export class NetViz {
       v.labels.forEach((lab, i) => ctx.fillText(lab, 6, pos[0][i][1] + 3));
     }
     const [ox, oy] = pos[4][0];
+    this.drawDecision(ctx, pos[4][0], pieceSize, narrow, fam);
     ctx.font = `700 ${narrow ? 13 : 18}px ${fam}`;
     ctx.fillStyle = '#e0e0e0';
     const cp = v.placeholder ? '—' : `${v.white > 0 ? '+' : ''}${v.white} cp`;
-    if (narrow) { // above the output node, so it never sits on top of it
-      ctx.textAlign = 'right';
-      ctx.fillText(cp, w - 6, oy - radius * 2.2 - 10);
-    } else {
-      ctx.textAlign = 'left';
-      ctx.fillText(cp, ox + radius * 2.2 + 10, oy + 6);
+    ctx.textAlign = 'center';
+    ctx.fillText(cp, ox, oy - radius * 2.2 - 12); // above the output node
+  }
+
+  drawDecision(ctx, [ox, oy], size, narrow, fam) {
+    const d = this.decision;
+    const cx = Math.min(this.w - size / 2 - 14, ox + 40 + size / 2 + (narrow ? 4 : 28)), cy = oy;
+    const x0 = cx - size / 2, y0 = cy - size / 2;
+
+    // shock ring when the decision is made
+    if (this.ring != null) {
+      const k = (this.time - this.ring) / 0.9;
+      if (k >= 1) this.ring = null;
+      else {
+        ctx.strokeStyle = rgba(CYAN, 0.55 * (1 - k)); ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(ox, oy, 10 + k * (this.w * 0.25), 0, 7); ctx.stroke();
+      }
+    }
+    if (!d) return;
+
+    const dis = d.dissolveAt != null ? Math.min(1, (this.time - d.dissolveAt) / 0.8) : 0;
+    const age = this.time - d.born;
+    const still = reduceMotion();
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    let formed = 0;
+    for (const p of d.parts) {
+      const k = Math.max(0, Math.min(1, still ? 1 : (age - p.delay) / p.dur));
+      if (k >= 1) formed++;
+      const e = ease(k);
+      // start: a point on a connection of the graph
+      const sx = p.sx ?? ox, sy = p.sy ?? oy;
+      const tx = x0 + p.tx * size, ty = y0 + p.ty * size;
+      // curved path that swings through the output neuron
+      const mx = ox + (tx - ox) * 0.25, my = oy + (sy - oy) * 0.1;
+      const u = 1 - e;
+      let x = u * u * sx + 2 * u * e * mx + e * e * tx;
+      let y = u * u * sy + 2 * u * e * my + e * e * ty;
+      let a = k <= 0 ? 0 : 0.25 + 0.75 * e;
+      if (k >= 1) { // formed: gentle shimmer
+        x += Math.sin(this.time * 3 + p.jx) * 0.7; y += Math.cos(this.time * 2.6 + p.jx) * 0.7;
+        a = 0.75 + 0.25 * Math.sin(this.time * 4 + p.jx * 3);
+      }
+      if (dis > 0) { x += (x - cx) * dis * 0.9 + Math.sin(p.jx) * dis * 18; y += (y - cy) * dis * 0.9 - dis * 20; a *= 1 - dis; }
+      const col = p.hue ? MAGENTA : CYAN;
+      ctx.fillStyle = rgba(col, a * 0.3); ctx.beginPath(); ctx.arc(x, y, 3.2, 0, 7); ctx.fill();
+      ctx.fillStyle = rgba(mix(col, [255, 255, 255], 0.65), a); ctx.beginPath(); ctx.arc(x, y, 1.25, 0, 7); ctx.fill();
+    }
+    ctx.restore();
+
+    // once assembled, the real piece fades in under the particles so it reads clearly
+    const done = formed / d.parts.length;
+    if (d.img && done > 0.85 && !dis) {
+      ctx.globalAlpha = Math.min(0.28, (done - 0.85) * 2);
+      ctx.drawImage(d.img, x0, y0, size, size);
+      ctx.globalAlpha = 1;
+    }
+    if (done > 0.7) {
+      ctx.globalAlpha = (1 - dis) * Math.min(1, (done - 0.7) * 3);
+      ctx.font = `700 ${narrow ? 13 : 20}px ${fam}`;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#ffffff';
+      ctx.direction = 'ltr';
+      ctx.fillText(d.san, cx, Math.min(this.h - 6, y0 + size + (narrow ? 14 : 22)));
+      ctx.globalAlpha = 1;
     }
   }
 }

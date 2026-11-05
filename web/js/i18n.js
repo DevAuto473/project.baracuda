@@ -34,6 +34,13 @@ const STRINGS = {
     'viz.sub0': '{n} active of 768', 'viz.sub1': '32 of 512 shown', 'viz.sub2': '32 neurons', 'viz.sub4': 'eval (White)',
     netClassicViz: 'Classical · network in training',
     'viz.s0': 'Input', 'viz.s1': 'Features', 'viz.s2': 'Hidden 1', 'viz.s3': 'Hidden 2', 'viz.s4': 'Output',
+    'thanks.title': 'Thank you!',
+    'thanks.msg': 'Barracuda learned from the way you think and play.',
+    'thanks.plain': 'Thanks for playing!',
+    'thanks.sent': 'Your game was saved anonymously (moves and result only) and will be used to train Barracuda.',
+    'thanks.off': 'Sharing is switched off, so this game was not saved.',
+    'thanks.show': 'Show the board',
+    'share.label': 'Share my games anonymously so Barracuda can learn',
   },
   ar: {
     title: 'باراكودا - العب ضد المحرك',
@@ -69,6 +76,13 @@ const STRINGS = {
     'viz.sub0': '{n} فعّالة من 768', 'viz.sub1': 'عرض 32 من 512', 'viz.sub2': '32 عصبوناً', 'viz.sub4': 'التقييم (الأبيض)',
     netClassicViz: 'كلاسيكي · الشبكة قيد التدريب',
     'viz.s0': 'المدخلات', 'viz.s1': 'الخصائص', 'viz.s2': 'مخفية 1', 'viz.s3': 'مخفية 2', 'viz.s4': 'المخرج',
+    'thanks.title': 'شكرًا لك!',
+    'thanks.msg': 'لقد تعلّم باراكودا من طريقة تفكيرك ولعبك.',
+    'thanks.plain': 'شكرًا لك على اللعب!',
+    'thanks.sent': 'حُفظت مباراتك دون أي بيانات شخصية (النقلات والنتيجة فقط) وستُستخدم في تدريب باراكودا.',
+    'thanks.off': 'المشاركة متوقفة، لذلك لم تُحفظ هذه المباراة.',
+    'thanks.show': 'أظهر الرقعة',
+    'share.label': 'شارك مبارياتي دون ذكر هويتي ليتعلّم منها باراكودا',
   },
 };
 

@@ -330,4 +330,29 @@ python3 -m http.server -d web 8000            # then open http://localhost:8000
 ```
 The WebAssembly build uses the same SSE4.1 NNUE kernels (mapped to WASM SIMD), and its network evaluations match the native build exactly. Visitors' games are not collected: training only happens on your machine.
 
+**One screen.** On a desktop-sized window the whole page fits without scrolling (board, controls, the neural network and the move list); on phones and very short windows it stacks and scrolls. Adding `?fen=<FEN>` to the address starts a game from that position.
+
+**Pace.** After your move, Barracuda always waits at least one second before moving on Beginner, Casual and Club (they search almost instantly, and a piece that jumps by itself is hard to follow). The network drawing keeps animating during that second. When Barracuda picks its move, the moving piece assembles from particles drawn out of the network's connections.
+
+**Learning from visitors' games (optional).** When a game ends, the page can send an anonymous record of it (moves, result, strength level, a random id: no name, no IP stored by the site) to a collector you set up in `web/config.json`. Visitors can switch this off with the checkbox in the footer. If Barracuda wins and the game was really sent, the board turns black and says *"Thank you! Barracuda learned from the way you think and play."*; when nothing was sent (no collector configured, sharing off, offline) it only says thanks for playing, so the page never claims something that did not happen.
+
+Nothing changes on the site by itself: the games become training data when you run the steps below.
+
+1. Create a Google Form with a single **Paragraph** question. Open the form's pre-filled link to find the field name (`entry.123456789`), and take the form address ending in `/formResponse`. Put them in `web/config.json`:
+   ```json
+   { "collect": { "type": "googleform",
+                  "formUrl": "https://docs.google.com/forms/d/e/<FORM_ID>/formResponse",
+                  "entry": "entry.123456789" } }
+   ```
+   (any endpoint that accepts a plain-text POST also works: `{ "collect": { "type": "http", "url": "https://..." } }`). Commit and push.
+2. Download the responses (Form → Responses → Sheets → File → Download → CSV).
+3. Turn them into training positions, mix them with your self-play data, train and publish:
+```bash
+./build/bin/barracuda-cli import-games --in responses.csv --out human.txt --depth 6
+cat selfplay.txt human.txt > all.txt
+./build/bin/barracuda-cli train --data all.txt --net barracuda.bnn --epochs 10
+./build/bin/barracuda-cli publish --net barracuda.bnn --games 100
+```
+`import-games` replays every game, skips the opening, and labels each quiet position with the engine's evaluation and the game's result. It accepts the CSV export or JSON lines and ignores corrupt records.
+
 **Languages and fonts.** The page is available in English and Arabic (button in the header, remembered per browser, and picked automatically from the browser language on first visit). Arabic switches the layout to right-to-left while the chess board itself is never mirrored. English text is set in Roca Two Bold and Arabic in IBM Plex Sans Arabic, both self-hosted in `web/fonts/` (see `web/fonts/NOTICE.txt` for licences; confirm that your Roca Two licence allows web embedding before publishing).

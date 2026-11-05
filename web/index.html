@@ -25,19 +25,31 @@
           <div class="evalbar-white" id="evalWhite"></div>
           <span class="evalbar-label" id="evalLabel">0.0</span>
         </div>
-        <div class="board" id="board" role="application" aria-label="Chess board" data-i18n-label="boardLabel"></div>
+        <div class="board-stack">
+          <div class="board" id="board" role="application" aria-label="Chess board" data-i18n-label="boardLabel"></div>
+          <div class="board-overlay" id="boardOverlay" hidden role="dialog" aria-live="polite">
+            <div class="overlay-card">
+              <div class="thanks-title" id="thanksTitle"></div>
+              <p class="thanks-msg" id="thanksMsg"></p>
+              <p class="thanks-note" id="thanksNote"></p>
+              <div class="buttons">
+                <button id="thanksNew" class="primary" data-i18n="newGame">New game</button>
+                <button id="thanksShow" data-i18n="thanks.show">Show the board</button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
       <div class="status" id="status">Loading engine&hellip;</div>
     </section>
 
-    <aside class="side">
-      <div class="panel">
-        <h2 data-i18n="game">Game</h2>
-        <div class="row">
+    <div class="right">
+      <div class="panel game">
+        <div class="field">
           <label for="level" data-i18n="level">Strength</label>
           <select id="level"></select>
         </div>
-        <div class="row">
+        <div class="field">
           <label for="color" data-i18n="youPlay">You play</label>
           <select id="color">
             <option value="w" data-i18n="white">White</option>
@@ -52,43 +64,47 @@
         </div>
       </div>
 
-      <div class="panel">
-        <h2 data-i18n="engine">Engine</h2>
-        <div class="kv"><span data-i18n="thinking">Thinking</span><b id="thinking">idle</b></div>
-        <div class="kv"><span data-i18n="depth">Depth</span><b id="depth">-</b></div>
-        <div class="kv"><span data-i18n="speed">Speed</span><b id="nps">-</b></div>
+      <div class="panel engine">
+        <div class="chips">
+          <span class="chip"><span data-i18n="thinking">Thinking</span> <b id="thinking">idle</b></span>
+          <span class="chip"><span data-i18n="depth">Depth</span> <b id="depth">-</b></span>
+          <span class="chip"><span data-i18n="speed">Speed</span> <b id="nps">-</b></span>
+        </div>
         <div class="pv" id="pv">&nbsp;</div>
       </div>
 
-      <div class="panel">
-        <h2 data-i18n="network">Network</h2>
-        <div class="kv"><span data-i18n="evaluation">Evaluation</span><b id="netEval">-</b></div>
-        <div class="kv"><span data-i18n="trained">Trained</span><b id="netTrained">-</b></div>
-        <div class="kv"><span data-i18n="netStrength">Strength</span><b id="netElo">-</b></div>
-        <div class="kv"><span data-i18n="updated">Updated</span><b id="netUpdated">-</b></div>
-      </div>
+      <div class="lower">
+        <section class="panel viz" id="viz" aria-labelledby="vizTitle">
+          <div class="viz-head">
+            <h2 id="vizTitle" data-i18n="viz.title">Neural network</h2>
+            <span class="viz-status" id="vizStatus"></span>
+          </div>
+          <div class="netline">
+            <span class="chip"><span data-i18n="evaluation">Evaluation</span> <b id="netEval">-</b></span>
+            <span class="chip"><span data-i18n="trained">Trained</span> <b id="netTrained">-</b></span>
+            <span class="chip"><span data-i18n="netStrength">Strength</span> <b id="netElo">-</b></span>
+            <span class="chip"><span data-i18n="updated">Updated</span> <b id="netUpdated">-</b></span>
+          </div>
+          <canvas id="vizCanvas"></canvas>
+          <div class="viz-note" id="vizNote"></div>
+        </section>
 
-      <div class="panel moves-panel">
-        <h2 data-i18n="moves">Moves</h2>
-        <ol class="moves" id="moves"></ol>
+        <div class="panel moves-panel">
+          <h2 data-i18n="moves">Moves</h2>
+          <ol class="moves" id="moves"></ol>
+        </div>
       </div>
-    </aside>
-
-    <section class="panel viz" id="viz" aria-labelledby="vizTitle">
-      <div class="viz-head">
-        <h2 id="vizTitle" data-i18n="viz.title">Neural network</h2>
-        <span class="viz-status" id="vizStatus"></span>
-      </div>
-      <canvas id="vizCanvas"></canvas>
-      <div class="viz-note" id="vizNote"></div>
-    </section>
+    </div>
   </main>
 
   <div class="overlay" id="promo" hidden>
     <div class="promo-box" id="promoBox"></div>
   </div>
 
-  <footer data-i18n="footer">Runs entirely in your browser with WebAssembly &mdash; no server, no account. Engine source on GitHub.</footer>
+  <footer>
+    <label class="share" id="shareWrap" hidden><input type="checkbox" id="shareBox" checked> <span data-i18n="share.label">Share my games anonymously so Barracuda can learn</span></label>
+    <span data-i18n="footer">Runs entirely in your browser with WebAssembly &mdash; no server, no account. Engine source on GitHub.</span>
+  </footer>
   <script type="module" src="js/app.js?v=__BUILD__"></script>
 </body>
 </html>
