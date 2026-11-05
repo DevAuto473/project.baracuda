@@ -2,7 +2,10 @@
 const STRINGS = {
   en: {
     title: 'Barracuda - play the engine',
+    brand: 'BARRACUDA',
+    desc: 'Play chess against Barracuda, a C++ engine with a self-trained NNUE, running entirely in your browser.',
     tag: 'C++20 chess engine · self-trained NNUE · runs in your browser',
+    eloBadge: 'Elo ~{elo}', eloNone: 'Elo --', mate: 'M', speedFmt: '{n} knps', cpFmt: '{v} cp',
     eloTitle: 'Estimated strength of the published network',
     evalTitle: "Evaluation (White's point of view)",
     boardLabel: 'Chess board',
@@ -45,7 +48,10 @@ const STRINGS = {
   },
   ar: {
     title: 'باراكودا - العب ضد المحرك',
+    brand: 'BARRACUDA',
+    desc: 'العب الشطرنج ضد باراكودا، محرك مكتوب بلغة C++ وبشبكة NNUE دربها بنفسه، ويعمل بالكامل داخل متصفحك.',
     tag: 'محرك شطرنج بلغة C++20 · شبكة NNUE مدرّبة ذاتياً · يعمل داخل متصفحك',
+    eloBadge: 'Elo ~{elo}', eloNone: 'Elo --', mate: 'M', speedFmt: '{n} knps', cpFmt: '{v} cp',
     eloTitle: 'القوة التقديرية للشبكة المنشورة',
     evalTitle: 'التقييم (من جهة الأبيض)',
     boardLabel: 'رقعة الشطرنج',
@@ -103,6 +109,8 @@ export function applyStatic() {
   document.documentElement.lang = lang;
   document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
   document.title = t('title');
+  const meta = document.querySelector('meta[name="description"]');
+  if (meta) meta.setAttribute('content', t('desc'));
   for (const el of document.querySelectorAll('[data-i18n]')) el.textContent = t(el.dataset.i18n);
   for (const el of document.querySelectorAll('[data-i18n-title]')) el.title = t(el.dataset.i18nTitle);
   for (const el of document.querySelectorAll('[data-i18n-label]')) el.setAttribute('aria-label', t(el.dataset.i18nLabel));

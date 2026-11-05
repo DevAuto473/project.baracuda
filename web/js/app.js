@@ -181,7 +181,7 @@ function renderEval() {
   const mate = Math.abs(cp) >= 29000;
   const share = mate ? (cp > 0 ? 0.97 : 0.03) : Math.min(0.97, Math.max(0.03, 1 / (1 + Math.exp(-cp / 300))));
   els.evalWhite.style.height = `${(share * 100).toFixed(1)}%`;
-  els.evalLabel.textContent = mate ? 'M' : (Math.abs(cp) / 100).toFixed(1);
+  els.evalLabel.textContent = mate ? t('mate') : (Math.abs(cp) / 100).toFixed(1);
 }
 
 // ---------------------------------------------------------------- game flow
@@ -473,7 +473,7 @@ function renderNet() {
   $('netElo').title = m ? m.elo_basis : '';
   const locale = getLang() === 'ar' ? 'ar-u-nu-latn' : undefined; // keep Western digits in Arabic
   $('netUpdated').textContent = m ? new Date(m.updated).toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric' }) : '-';
-  $('eloBadge').textContent = m ? `Elo ~${m.elo}` : 'Elo --';
+  $('eloBadge').textContent = m ? t('eloBadge', { elo: m.elo }) : t('eloNone');
 }
 function showManifest(m, nnueActive, hasNet) { netInfo = { manifest: m, nnue: nnueActive, hasNet: !!hasNet }; renderNet(); renderViz(); }
 
@@ -501,7 +501,7 @@ async function boot() {
     if (!state.thinking) return;
     if (m.view) { try { viz.setView(JSON.parse(m.view)); } catch (_) { /* ignore a malformed frame */ } }
     els.depth.textContent = String(m.depth);
-    els.nps.textContent = `\u2066${m.npsK} knps\u2069`; // isolate so Arabic pages keep "1200 knps" in this order
+    els.nps.textContent = `\u2066${t('speedFmt', { n: m.npsK })}\u2069`; // isolate so Arabic pages keep the number order
     els.pv.textContent = m.pv;
     state.evalWhite = m.score;
     renderEval();

@@ -234,3 +234,5 @@ footer { display: flex; justify-content: center; align-items: center; flex-wrap:
   .lower { flex-basis: 150px; min-height: 150px; }
   #vizCanvas { min-height: 120px; }
 }
+
+html[lang="ar"] .brand { letter-spacing: 0; }  /* letter-spacing would break Arabic letter joining if the brand is set in Arabic */

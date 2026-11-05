@@ -273,7 +273,7 @@ export class NetViz {
     this.drawDecision(ctx, pos[4][0], pieceSize, narrow, fam);
     ctx.font = `700 ${narrow ? 13 : 18}px ${fam}`;
     ctx.fillStyle = '#e0e0e0';
-    const cp = v.placeholder ? '—' : `${v.white > 0 ? '+' : ''}${v.white} cp`;
+    const cp = v.placeholder ? '—' : t('cpFmt', { v: `${v.white > 0 ? '+' : ''}${v.white}` });
     ctx.textAlign = 'center';
     ctx.fillText(cp, ox, oy - radius * 2.2 - 12); // above the output node
   }
