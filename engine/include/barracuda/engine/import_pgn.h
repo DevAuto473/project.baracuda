@@ -29,12 +29,18 @@ struct ImportPgnOptions {
     int threads = 1;
     bool use_pgn_eval = true;  // take [%eval ...] from the PGN when present (free, and deeper than `depth`)
     bool require_result = true;
+
+    // Second output for the human-move model (`train-human`): "fen | uci_move" for the move a person
+    // actually played, in every position (captures and checks included, unlike the score file).
+    std::string moves_out;
+    int moves_every = 2;       // one move out of `moves_every`
+    bool moves_only = false;   // write only the moves file: no scoring, `out_path` is not touched
 };
 
 struct ImportPgnStats {
     int games_seen = 0, games_used = 0;
     int rejected_elo = 0, rejected_short = 0, rejected_other = 0, illegal = 0;
-    std::uint64_t positions = 0, from_pgn_eval = 0, from_search = 0;
+    std::uint64_t positions = 0, from_pgn_eval = 0, from_search = 0, moves_written = 0;
 };
 
 using ImportPgnLog = std::function<void(const std::string&)>;

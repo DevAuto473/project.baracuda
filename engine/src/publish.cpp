@@ -7,6 +7,7 @@
 #include <fstream>
 #include <sstream>
 
+#include "barracuda/engine/human_model.h"
 #include "barracuda/engine/suite.h"
 #include "barracuda/nnue/network.h"
 
@@ -90,6 +91,19 @@ PublishResult publish_network(const PublishOptions& opt, const std::atomic<bool>
         fs::remove(dest, ec);
     }
 
+    // the human-move model (~1 KB): the page uses it to predict the player and to set traps
+    const fs::path human_dest = out / "human.mdl";
+    if (!opt.human_path.empty() && fs::exists(opt.human_path, ec)) {
+        std::string herr;
+        if (HumanModel::load(opt.human_path, &herr)) {
+            fs::copy_file(opt.human_path, human_dest, fs::copy_options::overwrite_existing, ec);
+            res.has_human = !ec;
+        } else {
+            say("note: " + herr + ": not published");
+        }
+    }
+    if (!res.has_human) fs::remove(human_dest, ec);
+
     const std::time_t now = std::time(nullptr);
     char iso[32];
     std::strftime(iso, sizeof(iso), "%Y-%m-%dT%H:%M:%SZ", std::gmtime(&now));
@@ -103,6 +117,7 @@ PublishResult publish_network(const PublishOptions& opt, const std::atomic<bool>
        << "  \"updated\": \"" << iso << "\",\n"
        << "  \"eval\": \"" << (res.use_nnue ? "nnue" : "classical") << "\",\n"
        << "  \"net\": " << (net ? "\"barracuda.bnn\"" : "null") << ",\n"
+       << "  \"human\": " << (res.has_human ? "\"human.mdl\"" : "null") << ",\n"
        << "  \"epochs\": " << res.epochs << ",\n"
        << "  \"samples\": " << (unsigned long long)res.samples << ",\n"
        << "  \"elo\": " << (long long)std::llround(res.elo) << ",\n"

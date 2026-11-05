@@ -6,6 +6,13 @@ namespace barracuda::runtime {
 
 SearchWorker::SearchWorker(Logger& log, NetworkRegistry& nets, std::atomic<int>& eval_mode, std::atomic<bool>& strange_style)
     : log_(log), nets_(nets), eval_mode_(eval_mode), strange_style_(strange_style) {
+    // how people choose moves, when `barracuda-cli train-human` has produced one (run from the repository folder)
+    std::string herr;
+    if (auto m = HumanModel::load("human.mdl", &herr)) {
+        human_ = m;
+        search_.set_human_model(m);
+        log_.logf(LogLevel::Info, "human model loaded (human.mdl, first-choice accuracy %.0f%%)", 100.0 * double(m->top1));
+    }
     thread_ = std::thread([this] { run(); });
 }
 

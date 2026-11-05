@@ -22,6 +22,7 @@ Barracuda runs fully offline with no LibTorch, ONNX, or Python. Bitboards, legal
 9. [Known limitations](#9-known-limitations)
 10. [Play online: website on GitHub Pages](#10-play-online-website-on-github-pages)
 11. [Strange style: teaching Barracuda a personality](#11-strange-style-teaching-barracuda-a-personality)
+12. [Human mistakes: a model of how people choose moves](#12-human-mistakes-a-model-of-how-people-choose-moves)
 
 ---
 
@@ -427,3 +428,25 @@ In 62 games against the same engine without any of this (150 ms/move), the full 
 Measure it against a human-like opponent: `barracuda-cli trap-test --games 16 --movetime 100` (`--trap 0..100`, `--margin`, `--hunt 0|1`). In our runs Barracuda won every game; the opponent fell into about 3 of every 4 traps; games lasted 26 to 30 moves with every combination of settings, so the differences between them were within noise. That opponent loses quickly whatever happens: the traps are aimed at people, who avoid simple blunders but miss the move behind the obvious one.
 
 No engine can promise to beat every human in every game. What it does: it searches every reply before moving, never plays a strange move that a full-depth search does not justify, and never gives anything away when it is worse.
+
+## 12. Human mistakes: a model of how people choose moves
+
+People do not search. They play the move that *looks* right (a capture, a check, developing a piece, a recapture, saving an attacked piece) and miss what is hidden two or three moves deeper. `human_model.h` learns that preference from real games: each legal move is described by 30 cheap features (piece, capture, value taken, check, lands on an attacked square, leaves the piece hanging, escapes an attack, recapture, threat created, centrality, ...), and the probability of a move is a softmax over their weighted sum (a conditional logit trained on Lichess games). The model file `human.mdl` is about 1 KB of text, so it also runs in the browser.
+
+**What the search does with it.** Barracuda's traps judge a candidate move by the *chance* that the opponent falls for it: the summed probability of the likely replies (the four most probable, up to 85% of the probability) that lose at least 1.5 pawns. The most promising trap that is still sound (at most 0.4 pawn worse than the best move, proven by search) is played. Without a model, the single reply a 2-ply search prefers stands in for the person. The website also uses the model to predict the player's move (the *Read you* chip).
+
+**Build it (from the repository folder, after the data steps in section 10):**
+```bash
+# 1. the moves people actually played (not only the quiet ones): about 1 to 1.5 million for 50,000 games
+curl -s https://database.lichess.org/standard/lichess_db_standard_rated_2024-01.pgn.zst | zstdcat | \
+  ./build/bin/barracuda-cli import-pgn --in - --games 50000 --min-elo 1200 --max-elo 1800 --moves-only 1 --moves-out human_moves.txt
+# 2. learn how they choose (a minute or two on all cores)
+./build/bin/barracuda-cli train-human --data human_moves.txt --out human.mdl
+# 3. publish it with the network
+./build/bin/barracuda-cli publish --net barracuda.bnn --games 100 --push
+```
+`train-human` holds out every 20th move and reports how often the move people played was the model's first choice and in its top three, next to guessing at random and next to the old 2-ply stand-in, then lists what people like and avoid. **Read that line before publishing**: if the model does not predict people better than the 2-ply guess, `train-human` says so and `human.mdl` is better left out. The dashboard (run from the repository folder) and `barracuda-cli trap-test --human human.mdl` load the model too; the dashboard logs *human model loaded* at start.
+
+`import-pgn` options for this: `--moves-out FILE` (also write the moves; keep the score file as well, or add `--moves-only 1` to skip it and not touch `--out`), `--moves-every N` (one move in N, default 2). Choose the rating window of the people you expect to play against.
+
+**What is tested, and what is not.** The unit tests check the features, the training (on games of a stand-in player, where the model's first choice beats guessing five to one), probabilities, saving and loading, and the PGN reader. What I could not test is how well the model predicts *real* people, because the Lichess data was not reachable from where this was built: the held-out accuracy printed by `train-human` on your data is the real measure, and how much the traps win against real players can only be measured by playing them. A wrong model costs little: a trap is never played unless the search proves it is within 0.4 pawn of the best move.

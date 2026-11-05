@@ -47,7 +47,7 @@ class EngineClient {
       this.worker.postMessage({ id, ...msg }, transfer || []);
     });
   }
-  init(net, useNnue) { return this.send({ cmd: 'init', net, useNnue }, net ? [net] : []); }
+  init(net, useNnue, human) { return this.send({ cmd: 'init', net, useNnue, human }, [net, human].filter(Boolean)); }
   call(fn, ...args) { return this.send({ cmd: 'call', fn, args }); }
 }
 
@@ -580,9 +580,16 @@ async function boot() {
       if (r.ok) net = await r.arrayBuffer();
     } catch (_) { /* use classical */ }
   }
+  let human = null; // how people choose moves (published by `barracuda-cli publish`), optional
+  if (manifest && manifest.human) {
+    try {
+      const r = await fetch(`net/${manifest.human}?v=${manifest.version}`);
+      if (r.ok) human = await r.arrayBuffer();
+    } catch (_) { /* the stand-in predictor is used */ }
+  }
   let info;
   try {
-    info = await engine.init(net, !!net && manifest.eval === 'nnue');
+    info = await engine.init(net, !!net && manifest.eval === 'nnue', human);
   } catch (err) {
     state.error = t('startError') + err.message;
     renderStatus();

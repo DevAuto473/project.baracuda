@@ -8,7 +8,7 @@ let api = null;
 
 importScripts('../wasm-dist/barracuda.js?v=__BUILD__');
 
-async function init(net, useNnue) {
+async function init(net, useNnue, human) {
   const M = await createBarracuda({
     locateFile: (f) => new URL('../wasm-dist/' + f + '?v=__BUILD__', self.location.href).href,
   });
@@ -40,17 +40,24 @@ async function init(net, useNnue) {
     M.FS.writeFile('/net.bnn', new Uint8Array(net));
     loaded = w('brc_load_net', 'number', ['string'])('/net.bnn') === 1;
   }
+  let hasHuman = false; // how people choose moves: predicts the player, sets traps
+  if (human) {
+    try {
+      M.FS.writeFile('/human.mdl', new Uint8Array(human));
+      hasHuman = w('brc_load_human', 'number', ['string'])('/human.mdl') === 1;
+    } catch (_) { /* the stand-in predictor is used */ }
+  }
   const nnue = loaded && !!useNnue;
   api.setEval(nnue ? 1 : 0);
   api.setStyle(1); // the website always plays in Barracuda's strange style
-  return { simd: api.simd(), nnue, hasNet: loaded };
+  return { simd: api.simd(), nnue, hasNet: loaded, hasHuman };
 }
 
 self.onmessage = async (e) => {
   const m = e.data;
   try {
     let result;
-    if (m.cmd === 'init') result = await init(m.net, m.useNnue);
+    if (m.cmd === 'init') result = await init(m.net, m.useNnue, m.human);
     else if (m.cmd === 'call') result = api[m.fn](...m.args);
     self.postMessage({ id: m.id, result });
   } catch (err) {

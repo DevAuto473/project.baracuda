@@ -11,6 +11,9 @@
 #include <functional>
 #include <memory>
 #include <random>
+#include <vector>
+
+#include "barracuda/engine/human_model.h"
 #include <string>
 #include <vector>
 
@@ -48,7 +51,8 @@ struct SearchResult {
     Move best;
     Move objective_best; // what plain search preferred (differs from `best` when the style chose another move)
     bool styled = false;
-    Move trap_reply;     // set when `best` is a trap: the natural-looking reply that loses
+    Move trap_reply;     // set when `best` is a trap: the most likely reply that loses
+    float trap_prob = 0; // chance (by the human model) that the opponent falls for it
     bool defending = false; // adaptive style: this move was chosen in defence mode
     Move ponder;
     Value score = 0;
@@ -128,6 +132,10 @@ public:
     // (captures and threats it sees, deep tactics it does not). Used as the opponent model.
     Move predict_human(const Position& pos, int depth = 2);
 
+    // How people choose moves (see human_model.h). Without one, a 2-ply search stands in for it.
+    void set_human_model(std::shared_ptr<const HumanModel> m) { human_ = std::move(m); }
+    bool has_human_model() const { return human_ != nullptr; }
+
     // Static evaluation of `pos` with the active evaluator (side-to-move relative).
     Value static_eval(const Position& pos) const;
 
@@ -161,6 +169,7 @@ private:
     bool time_up_ = false;
     std::uint64_t styled_moves_ = 0, style_decisions_ = 0; // stop_ was raised by the time/node limit (not by the caller)
     StyleOptions style_;
+    std::shared_ptr<const HumanModel> human_;
     std::mt19937_64 style_rng_{12345};
     void apply_style(const Position& root, const MoveList& root_moves, std::int64_t full_hard_ms, SearchResult& result);
     bool try_trap(const MoveList& root_moves, SearchResult& result, bool no_risk);

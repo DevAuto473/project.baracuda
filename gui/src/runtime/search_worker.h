@@ -52,6 +52,7 @@ private:
     std::atomic<int>& eval_mode_;
     std::atomic<bool>& strange_style_;
     bool was_defending_ = false;
+    std::shared_ptr<const HumanModel> human_;
     Search search_{64};
 
     std::mutex mutex_;

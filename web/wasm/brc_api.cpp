@@ -11,6 +11,7 @@
 #include <sstream>
 #include <string>
 
+#include "barracuda/engine/human_model.h"
 #include "barracuda/engine/movegen.h"
 #include "barracuda/engine/notation.h"
 #include "barracuda/engine/search.h"
@@ -41,6 +42,7 @@ bool g_last_styled = false;
 std::string g_last_objective;
 std::string g_last_trap;
 bool g_last_defending = false;
+std::shared_ptr<const HumanModel> g_human;
 std::unique_ptr<Search> g_predictor; // separate small search: predicting never disturbs the main hash table
 StyleOptions g_style;
 nnue::NetworkView g_view;
@@ -130,6 +132,20 @@ BRC_EXPORT int brc_load_net(const char* path) {
     return 1;
 }
 
+// Loads the human-move model (path inside the wasm file system). Returns 1 on success.
+BRC_EXPORT int brc_load_human(const char* path) {
+    std::string err;
+    auto m = HumanModel::load(path, &err);
+    if (!m) {
+        g_out = err;
+        return 0;
+    }
+    g_human = m;
+    search().set_human_model(g_human);
+    if (g_predictor) g_predictor->set_human_model(g_human);
+    return 1;
+}
+
 BRC_EXPORT const char* brc_last_message() { return g_out.c_str(); }
 
 // 0 = classical, 1 = NNUE (requires a loaded network)
@@ -165,6 +181,7 @@ BRC_EXPORT const char* brc_predict(const char* fen, const char* moves) {
     if (!g_predictor) {
         g_predictor = std::make_unique<Search>(1);
         g_predictor->set_eval_mode(EvalMode::CLASSICAL);
+        g_predictor->set_human_model(g_human);
     }
     // (the predictor never uses the style: it models the opponent, not Barracuda)
     const Move m = g_predictor->predict_human(pos, 2);

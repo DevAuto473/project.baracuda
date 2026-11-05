@@ -18,6 +18,7 @@ struct PublishOptions {
     int movetime_ms = 100;
     bool force_nnue = false; // use the network on the site even if it lost the match
     bool force_classical = false;
+    std::string human_path = "human.mdl"; // how people choose moves (barracuda-cli train-human); shipped when present
 };
 
 struct PublishResult {
@@ -29,6 +30,7 @@ struct PublishResult {
     MatchStats match;
     std::uint32_t epochs = 0;
     std::uint64_t samples = 0;
+    bool has_human = false;
 };
 
 using PublishLog = std::function<void(const std::string&)>;

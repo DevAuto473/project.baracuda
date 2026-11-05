@@ -13,6 +13,7 @@
 #include "barracuda/engine/match.h"
 #include "barracuda/engine/movegen.h"
 #include "barracuda/engine/notation.h"
+#include "barracuda/engine/human_model.h"
 #include "barracuda/engine/import_pgn.h"
 #include "barracuda/engine/search.h"
 #include "barracuda/engine/suite.h"
@@ -469,6 +470,84 @@ TEST(import_pgn) {
     std::getline(f, line);
     CHECK(line == "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1 | 17 | 1.0");
     std::remove(out.c_str());
+
+    // moves for the human model: every played move, captures and checks included, only the accepted game
+    std::istringstream in2(pgn);
+    ImportPgnOptions o2 = o;
+    o2.moves_only = true;
+    o2.moves_every = 1;
+    o2.skip_plies = 0;
+    o2.moves_out = "/tmp/barracuda_import_moves_test.txt";
+    ImportPgnStats st2;
+    CHECK(import_pgn(in2, "/tmp/never_written.txt", o2, nullptr, stop, st2, &err));
+    CHECK(st2.games_used == 1 && st2.moves_written == 45 && st2.positions == 0);
+    std::ifstream mf(o2.moves_out);
+    int legal_lines = 0, captures = 0;
+    while (std::getline(mf, line)) {
+        const auto bar = line.find(" | ");
+        Position pp(line.substr(0, bar));
+        const Move mv = parse_uci_move(pp, line.substr(bar + 3));
+        legal_lines += mv ? 1 : 0;
+        captures += mv && mv.is_capture();
+    }
+    CHECK(legal_lines == 45 && captures >= 5);
+    std::remove(o2.moves_out.c_str());
+}
+
+TEST(human_model) {
+    // feature sanity
+    Position pos("rnbqkb1r/pppp1ppp/5n2/4p3/4P3/3P1N2/PPP2PPP/RNBQKB1R b KQkq - 0 3");
+    float f[kHumanFeatures];
+    HumanModel::features(pos, parse_uci_move(pos, "f6e4"), f);
+    CHECK(f[1] == 1.0f && f[6] == 1.0f && f[7] > 0.0f); // a knight capturing a pawn
+    HumanModel::features(pos, parse_uci_move(pos, "d7d6"), f);
+    CHECK(f[0] == 1.0f && f[6] == 0.0f && f[19] == 1.0f);
+    CHECK(pos.fen() == "rnbqkb1r/pppp1ppp/5n2/4p3/4P3/3P1N2/PPP2PPP/RNBQKB1R b KQkq - 0 3"); // restored
+
+    // stand-in for human games: a 2-ply player that errs 15% of the time, from varied openings
+    Search player(4);
+    player.set_eval_mode(EvalMode::CLASSICAL);
+    std::mt19937_64 rng(7);
+    const std::string path = "/tmp/barracuda_human_moves_test.txt";
+    {
+        std::ofstream out(path);
+        for (int g = 0; g < 150; ++g) {
+            Position p;
+            p.set_fen(Position::START_FEN);
+            for (int ply = 0; ply < 60 && game_result(p) == GameResult::ONGOING; ++ply) {
+                const MoveList l = legal_moves(p);
+                Move m = rng() % 100 < 15 || ply < 4 ? l[std::size_t(rng() % std::size_t(l.size))] : player.predict_human(p, 2);
+                if (ply >= 4 && ply % 2 == 0) out << p.fen() << " | " << m.to_uci() << "\n";
+                p.do_move(m);
+            }
+        }
+    }
+    HumanModel model;
+    HumanTrainOptions o;
+    o.epochs = 4;
+    o.threads = 2;
+    HumanTrainStats st;
+    std::atomic<bool> stop{false};
+    std::string err;
+    CHECK(train_human_model(path, model, o, stop, st, &err));
+    std::printf("  %llu samples: held-out top-1 %.1f%% (uniform %.1f%%), top-3 %.1f%%, NLL %.3f (uniform %.3f)\n",
+                (unsigned long long)st.samples, 100 * st.val_top1, 100 * st.baseline_top1, 100 * st.val_top3, st.val_nll, st.baseline_nll);
+    CHECK(st.val_nll < st.baseline_nll - 0.2 && st.val_top1 > st.baseline_top1 * 1.8);
+    // probabilities
+    std::vector<RankedMove> r;
+    Position start;
+    start.set_fen(Position::START_FEN);
+    model.rank(start, r);
+    float sum = 0;
+    for (const RankedMove& x : r) sum += x.p;
+    CHECK(r.size() == 20 && std::fabs(sum - 1.0f) < 1e-4f && r[0].p >= r[1].p);
+    // save / load round trip
+    CHECK(model.save("/tmp/barracuda_human_test.mdl"));
+    const auto back = HumanModel::load("/tmp/barracuda_human_test.mdl");
+    CHECK(back && std::fabs(back->w[6] - model.w[6]) < 1e-5f && back->samples == model.samples);
+    CHECK(!HumanModel::load("/tmp/barracuda_human_moves_test.txt"));
+    std::remove(path.c_str());
+    std::remove("/tmp/barracuda_human_test.mdl");
 }
 
 } // namespace

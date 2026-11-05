@@ -721,23 +721,32 @@ Move Search::predict_human(const Position& pos, int depth) {
     can_stop_ = false;
     limits_ = SearchLimits{};
     pos_ = pos;
+    if (human_) {
+        std::vector<RankedMove> r;
+        human_->rank(pos_, r);
+        return r.empty() ? Move() : r[0].move;
+    }
     use_nnue_ = nnue_active();
     if (use_nnue_) acc_->reset(*net_, pos_);
     return shallow_best(0, std::max(1, depth));
 }
 
-// A trap: a move that is (nearly) as good as the best one, after which the reply that looks most
-// natural - the one a shallow search prefers - is a serious mistake. The opponent model `trap`
-// (0..100) sets how much evaluation may be risked for it: against a player who keeps falling for
-// such replies the engine sets traps eagerly, against a careful one it rarely bothers.
-// pos_ is the root on entry and on exit.
+// A trap: a move that is (nearly) as good as the best one, after which the replies a person is
+// likely to play are serious mistakes. With a human model the replies come with probabilities:
+// the trap is judged by the chance that the opponent falls for it (the summed probability of the
+// likely replies that lose at least 1.5 pawns), and the most promising one is played. Without a
+// model, the single reply a shallow search prefers stands in for the person.
+// The opponent model `trap` (0..100) sets how much evaluation may be risked for it (up to 0.4 pawn)
+// and how likely the fall must be. pos_ is the root on entry and on exit.
 bool Search::try_trap(const MoveList& root_moves, SearchResult& result, bool no_risk) {
     // counter-traps while defending risk nothing: only moves as good as the best one
     const int risk = no_risk ? 0 : std::clamp(style_.trap, 0, 100) * 40 / 100; // up to 0.4 pawn
-    const Value gain = 150;                                        // the natural reply must lose at least this much
+    const Value gain = 150;                                                      // the reply must lose at least this much
     const Value sound = result.score - risk;
     const Value punish = result.score + gain;
     const int depth = std::max(1, result.depth - 1);
+    // the more eager the style, the lower the chance that is still worth a trap
+    const float need = human_ ? std::max(0.20f, 0.65f - 0.0045f * float(std::clamp(style_.trap, 0, 100))) : 0.0f;
 
     // most forcing moves first: checks and captures give the opponent the most chances to go wrong
     struct Cand { Move m; int k; };
@@ -752,38 +761,58 @@ bool Search::try_trap(const MoveList& root_moves, SearchResult& result, bool no_
     std::sort(cands.begin(), cands.end(), [](const Cand& a, const Cand& b) { return a.k > b.k; });
     if (cands.size() > 10) cands.resize(10);
 
+    Move best_move, best_reply;
+    Value best_score = 0;
+    float best_prob = 0.0f;
+    std::vector<RankedMove> replies;
     for (const Cand& c : cands) {
-        if (should_stop()) return false;
+        if (should_stop()) break;
         make(c.m);
-        const Move natural = shallow_best(1, 2);
+        replies.clear();
+        if (human_) human_->rank(pos_, replies);
+        else if (const Move nat = shallow_best(1, 2)) replies.push_back({nat, 1.0f});
+
+        float fall = 0.0f, covered = 0.0f;
+        Move likely_loser;
+        for (std::size_t k = 0; k < replies.size() && k < 4 && covered < 0.85f; ++k) {
+            covered += replies[k].p;
+            make(replies[k].move);
+            const Value after = negamax(punish - 1, punish, std::max(1, depth - 1), 2, true); // engine to move
+            unmake();
+            if (stop_.load(std::memory_order_relaxed)) break;
+            if (after >= punish) {
+                fall += replies[k].p;
+                if (!likely_loser) likely_loser = replies[k].move;
+            }
+        }
         bool ok = false;
         Value v = 0;
-        if (natural && !stop_.load(std::memory_order_relaxed)) {
-            // 1) does the natural reply lose? (we are to move at ply 2)
-            make(natural);
-            const Value after = negamax(punish - 1, punish, std::max(1, depth - 1), 2, true);
-            unmake();
-            // 2) is the trap itself sound against the best defence?
-            if (after >= punish && !stop_.load(std::memory_order_relaxed)) {
-                v = c.m == result.best ? result.score : -negamax(-sound, -sound + 1, depth, 1, true);
-                ok = v >= sound;
-            }
+        if (!stop_.load(std::memory_order_relaxed) && likely_loser && fall >= need && fall > best_prob) {
+            // is the trap itself sound against the best defence?
+            v = c.m == result.best ? result.score : -negamax(-sound, -sound + 1, depth, 1, true);
+            ok = v >= sound && !stop_.load(std::memory_order_relaxed);
         }
         unmake();
-        if (stop_.load(std::memory_order_relaxed)) return false;
+        if (stop_.load(std::memory_order_relaxed)) break;
         if (ok) {
-            if (c.m != result.best) {
-                result.best = c.m;
-                result.ponder = natural;
-                result.pv.assign({c.m, natural});
-                result.score = v;
-                result.styled = true;
-            }
-            result.trap_reply = natural;
-            return true;
+            best_move = c.m;
+            best_reply = likely_loser;
+            best_score = v;
+            best_prob = fall;
+            if (!human_ || fall >= 0.75f) break; // good enough: do not spend more time
         }
     }
-    return false;
+    if (!best_move) return false;
+    if (best_move != result.best) {
+        result.best = best_move;
+        result.ponder = best_reply;
+        result.pv.assign({best_move, best_reply});
+        result.score = best_score;
+        result.styled = true;
+    }
+    result.trap_reply = best_reply;
+    result.trap_prob = best_prob;
+    return true;
 }
 
 } // namespace barracuda

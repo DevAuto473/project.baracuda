@@ -135,11 +135,24 @@ std::vector<Token> tokenize(const std::string& text) {
 bool import_pgn(std::istream& in, const std::string& out_path, const ImportPgnOptions& opt,
                 std::shared_ptr<const nnue::Network> net, const std::atomic<bool>& stop, ImportPgnStats& st,
                 std::string* error, const ImportPgnLog& log) {
-    std::ofstream out(out_path, std::ios::trunc);
-    if (!out) {
-        if (error) *error = "cannot write '" + out_path + "'";
-        return false;
+    std::ofstream out;
+    if (!opt.moves_only) {
+        out.open(out_path, std::ios::trunc);
+        if (!out) {
+            if (error) *error = "cannot write '" + out_path + "'";
+            return false;
+        }
     }
+    std::ofstream moves_file;
+    if (!opt.moves_out.empty()) {
+        moves_file.open(opt.moves_out, std::ios::trunc);
+        if (!moves_file) {
+            if (error) *error = "cannot write '" + opt.moves_out + "'";
+            return false;
+        }
+    }
+    std::unordered_set<Key> seen_moves;
+    const int moves_every = std::max(1, opt.moves_every);
 
     // ---- pass 1: read, filter and sample (cheap, single thread) ----
     std::vector<Sample> samples;
@@ -165,10 +178,17 @@ bool import_pgn(std::istream& in, const std::string& out_path, const ImportPgnOp
         bool next_has_eval = false; // eval of the position about to be considered = eval after the previous move
         int eligible = 0;
         std::vector<Sample> game_samples;
+        std::string game_moves; // written only if the whole game parses (no half games)
+        std::uint64_t game_moves_n = 0;
         for (std::size_t i = 0; i < toks.size(); ++i) {
             const Move m = parse_san_move(pos, toks[i].san);
             if (!m) { ok = false; break; }
-            if (int(i) >= opt.skip_plies && !pos.in_check() && m.is_quiet() && game_result(pos) == GameResult::ONGOING) {
+            if (moves_file.is_open() && int(i) >= opt.skip_plies && int(i) % moves_every == 0 &&
+                seen_moves.insert(pos.key()).second) {
+                game_moves += pos.fen() + " | " + m.to_uci() + "\n";
+                ++game_moves_n;
+            }
+            if (!opt.moves_only && int(i) >= opt.skip_plies && !pos.in_check() && m.is_quiet() && game_result(pos) == GameResult::ONGOING) {
                 if (eligible++ % every == 0 && seen.insert(pos.key()).second) {
                     Sample s;
                     s.fen = pos.fen();
@@ -187,10 +207,13 @@ bool import_pgn(std::istream& in, const std::string& out_path, const ImportPgnOp
         }
         if (!ok) { ++st.illegal; continue; }
         ++st.games_used;
+        if (moves_file.is_open()) { moves_file << game_moves; st.moves_written += game_moves_n; }
         for (Sample& s : game_samples) samples.push_back(std::move(s));
         if (log && st.games_used % 5000 == 0)
             log("read " + std::to_string(st.games_used) + " games, " + std::to_string(samples.size()) + " positions so far");
     }
+
+    if (opt.moves_only) return true;
 
     // ---- pass 2: scores. Positions with a PGN evaluation are free; the rest are searched in parallel ----
     std::atomic<std::size_t> cursor{0};

@@ -16,6 +16,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "barracuda/engine/human_model.h"
 #include "barracuda/engine/import_pgn.h"
 #include "barracuda/engine/match.h"
 #include "barracuda/engine/movegen.h"
@@ -438,6 +439,7 @@ int cmd_publish(const Args& a) {
     opt.movetime_ms = int(a.num("movetime", 100));
     opt.force_nnue = a.has("force-nnue");
     opt.force_classical = a.has("force-classical");
+    opt.human_path = a.get("human", "human.mdl");
     const PublishLog log = [](const std::string& s) { std::printf("%s\n", s.c_str()); std::fflush(stdout); };
     const PublishResult r = publish_network(opt, g_stop, log);
     if (!r.ok) {
@@ -501,6 +503,13 @@ int cmd_trap_test(const Args& a, std::shared_ptr<const nnue::Network> net) {
     const int games = int(a.num("games", 10));
     const int ms = int(a.num("movetime", 100));
     const int trap = int(a.num("trap", 100));
+    std::shared_ptr<const HumanModel> human_model; // optional: what Barracuda believes about how people play
+    if (a.has("human")) {
+        std::string herr;
+        human_model = HumanModel::load(a.get("human"), &herr);
+        if (!human_model) { std::cerr << herr << "\n"; return 1; }
+        std::printf("using the human model %s (first-choice accuracy %.0f%%)\n", a.get("human").c_str(), 100.0 * double(human_model->top1));
+    }
     std::printf("Barracuda vs a human-like opponent (2-ply search, sometimes 1-ply): %d games per setting at %d ms/move\n", games, ms);
     for (int pass = 0; pass < 2; ++pass) {
         const bool traps = pass == 1;
@@ -520,6 +529,7 @@ int cmd_trap_test(const Args& a, std::shared_ptr<const nnue::Network> net) {
             so.adaptive = a.num("adaptive", 1) != 0;
             so.seed = std::uint64_t(g + 1);
             engine.set_style(so);
+            if (human_model) engine.set_human_model(human_model);
             Position pos;
             pos.set_fen(Position::START_FEN);
             for (int i = 0; i < 4; ++i) { // varied openings
@@ -574,6 +584,9 @@ int cmd_import_pgn(const Args& a, std::shared_ptr<const nnue::Network> net) {
     o.depth = int(a.num("depth", 5));
     o.threads = std::max(1, int(a.num("threads", int(std::thread::hardware_concurrency()))));
     o.use_pgn_eval = a.num("pgn-eval", 1) != 0;
+    o.moves_out = a.get("moves-out");
+    o.moves_every = int(a.num("moves-every", 2));
+    o.moves_only = a.num("moves-only", 0) != 0;
     std::ifstream file;
     std::istream* in = &std::cin;
     if (in_path != "-") {
@@ -597,9 +610,54 @@ int cmd_import_pgn(const Args& a, std::shared_ptr<const nnue::Network> net) {
     }
     std::printf("games: %d read, %d used (Elo filter %d, too short %d, other %d, illegal moves %d)\n", st.games_seen, st.games_used,
                 st.rejected_elo, st.rejected_short, st.rejected_other, st.illegal);
-    std::printf("%llu training positions written to %s (%llu scored from the PGN's own evaluation, %llu by search)\n",
-                (unsigned long long)st.positions, out_path.c_str(), (unsigned long long)st.from_pgn_eval,
-                (unsigned long long)st.from_search);
+    if (!o.moves_only)
+        std::printf("%llu training positions written to %s (%llu scored from the PGN's own evaluation, %llu by search)\n",
+                    (unsigned long long)st.positions, out_path.c_str(), (unsigned long long)st.from_pgn_eval,
+                    (unsigned long long)st.from_search);
+    if (!o.moves_out.empty())
+        std::printf("%llu human moves written to %s (next: barracuda-cli train-human --data %s)\n",
+                    (unsigned long long)st.moves_written, o.moves_out.c_str(), o.moves_out.c_str());
+    return 0;
+}
+
+// Learn how people choose moves from "fen | uci" lines (see import-pgn --moves-out).
+int cmd_train_human(const Args& a) {
+    const std::string data = a.get("data", "human_moves.txt");
+    const std::string out = a.get("out", "human.mdl");
+    HumanModel model;
+    if (a.has("resume") && !HumanModel::load(a.get("resume")))
+        std::printf("note: could not read %s, starting from zero\n", a.get("resume").c_str());
+    else if (a.has("resume")) model = *HumanModel::load(a.get("resume"));
+    HumanTrainOptions o;
+    o.epochs = int(a.num("epochs", 6));
+    o.batch = int(a.num("batch", 2048));
+    o.lr = float(a.real("lr", 0.05));
+    o.threads = int(a.num("threads", 0));
+    o.max_samples = int(a.num("max-samples", 0));
+    HumanTrainStats st;
+    std::string err;
+    if (!train_human_model(data, model, o, g_stop, st, &err, [](const std::string& m) {
+            std::printf("%s\n", m.c_str());
+            std::fflush(stdout);
+        })) {
+        std::cerr << err << "\n";
+        return 1;
+    }
+    if (!model.save(out, &err)) {
+        std::cerr << err << "\n";
+        return 1;
+    }
+    std::printf("\nwhat people like (positive) and avoid (negative):\n");
+    std::vector<int> idx(kHumanFeatures);
+    for (int i = 0; i < kHumanFeatures; ++i) idx[std::size_t(i)] = i;
+    std::sort(idx.begin(), idx.end(), [&](int x, int y) { return std::fabs(model.w[x]) > std::fabs(model.w[y]); });
+    for (int k = 0; k < 12; ++k) std::printf("  %+6.2f  %s\n", double(model.w[idx[std::size_t(k)]]), HumanModel::feature_name(idx[std::size_t(k)]));
+    std::printf("\nsaved %s. Held-out: the move people played was the model's first choice %.1f%% of the time, in its top three %.1f%% "
+                "(guessing at random: %.1f%%; a 2-ply search as the guess: %.1f%%).\n",
+                out.c_str(), 100 * st.val_top1, 100 * st.val_top3, 100 * st.baseline_top1, 100 * st.val_top1_shallow);
+    if (st.val_top1 < st.val_top1_shallow)
+        std::printf("note: on these games the simple 2-ply guess predicts people better than the model, so the traps may do better without "
+                    "human.mdl (do not publish it). More games or a narrower rating window (--min-elo / --max-elo when importing) can help.\n");
     return 0;
 }
 
@@ -786,6 +844,8 @@ void usage() {
         "  barracuda-cli import-games --in games.csv|jsonl [--out human.txt] [--depth 6]   website games -> training data\n"
         "  barracuda-cli import-pgn --in games.pgn|- [--games 50000] [--min-elo 1200 --max-elo 1800] [--every 3] [--depth 5] [--out human.txt]\n"
         "                           PGN (e.g. Lichess, via zstdcat file.pgn.zst | ... --in -) -> training data\n"
+        "  barracuda-cli import-pgn ... --moves-out human_moves.txt [--moves-only 1] [--moves-every 2]   also write the moves people played\n"
+        "  barracuda-cli train-human --data human_moves.txt [--out human.mdl] [--epochs 6]   learn how people choose moves\n"
         "  barracuda-cli publish [--net barracuda.bnn] [--out web/net] [--games 40] [--push]   website network + manifest (+ git push)\n"
         "  barracuda-cli match [--games N] [--movetime ms] [--net f.bnn]   NNUE vs classical, Elo +/- margin\n\n"
         "  Global: --net <file.bnn> (default: ./barracuda.bnn if present)  --classical\n",
@@ -829,6 +889,7 @@ int main(int argc, char** argv) {
     if (sub == "publish") return cmd_publish(args);
     if (sub == "import-games") return cmd_import_games(args, net);
     if (sub == "import-pgn") return cmd_import_pgn(args, net);
+    if (sub == "train-human") return cmd_train_human(args);
     usage();
     return sub == "help" || sub == "-h" ? 0 : 1;
 }

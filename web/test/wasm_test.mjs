@@ -45,6 +45,15 @@ console.log(`style changed the move in ${styledCount} of 4 test positions`);
 const predict = f('brc_predict', 'string', ['string', 'string']);
 check('predicts that a human takes a hanging queen', predict('4k3/8/8/3q4/8/8/3R4/4K3 w - - 0 1', '') === 'd2d5');
 check('prediction after a move list', /^[a-h][1-8][a-h][1-8]/.test(predict(START, 'e2e4')));
+// a human model (hand-made: people like captures, checks, centre; they avoid hanging pieces)
+{
+  const w = Array(30).fill(0); w[6] = 2; w[7] = 1; w[8] = 1; w[23] = 0.8; w[12] = -1.5; w[15] = 1; w[21] = 0.8;
+  M.FS.writeFile('/h.mdl', `BRCHUMAN 1 30 100000 0.3 0.55\n${w.join(' ')}\n`);
+  check('loads a human model', f('brc_load_human', 'number', ['string'])('/h.mdl') === 1);
+  M.FS.writeFile('/bad.mdl', 'nonsense');
+  check('rejects a corrupt human model', f('brc_load_human', 'number', ['string'])('/bad.mdl') === 0);
+  check('human model: a human takes the hanging queen', predict('4k3/8/8/3q4/8/8/3R4/4K3 w - - 0 1', '') === 'd2d5');
+}
 f('brc_set_opponent', null, ['number', 'number'])(100, 40);
 r = search('6k1/5ppp/8/8/8/8/5PPP/3R2K1 w - - 0 1', '', 200, 8).split(' ');
 check('traps never replace a mate', r[0] === 'd1d8');
