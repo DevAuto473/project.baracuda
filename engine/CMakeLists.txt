@@ -18,6 +18,7 @@ add_library(barracuda_engine STATIC
     src/selfplay.cpp
     src/match.cpp
     src/publish.cpp
+    src/import_pgn.cpp
     src/suite.cpp)
 add_library(barracuda::engine ALIAS barracuda_engine)
 target_include_directories(barracuda_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)

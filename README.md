@@ -360,6 +360,29 @@ cat selfplay.txt human.txt > all.txt
 ```
 `import-games` replays every game, skips the opening, and labels each quiet position with the engine's evaluation and the game's result. It accepts the CSV export or JSON lines and ignores corrupt records.
 
+**Human games without visitors: the Lichess database.** `import-pgn` reads any PGN, including the free [Lichess database](https://database.lichess.org) (monthly `.pgn.zst` files, millions of rated games), and turns it into training data. It reads as a stream and stops after the first N games, so a huge file is never loaded:
+```bash
+sudo apt install zstd
+zstdcat lichess_db_standard_rated_2024-01.pgn.zst | ./build/bin/barracuda-cli import-pgn --in - --games 50000 --min-elo 1200 --max-elo 1800 --out human.txt
+```
+(or `--in games.pgn` for a plain file). To keep the data small and the training fast, without hurting what the network learns:
+
+| Filter | Default | Why |
+|---|---|---|
+| `--min-elo` / `--max-elo` | none | both players inside the window (1200 to 1800 is where most opponents are) |
+| `--skip-plies` | 10 | opening moves are memorised book, not understanding |
+| quiet positions only | always | no checks and no captures: the score of a position in the middle of an exchange is noise |
+| `--every` | 3 | one position in three: neighbouring positions are nearly identical |
+| duplicates | removed | the same position is stored once |
+| `--min-plies` | 20 | drops aborted games |
+| scores | clamped to +-25 pawns | larger scores add nothing and slow training |
+
+50,000 games give about 0.7 to 1 million positions (roughly 60 MB); raise `--every` to 5 for about half of that. Scores come from the PGN's own engine evaluation (`[%eval]`) when a game has one (free, and deeper than our search), and from a depth-5 search (`--depth`) on all cores (`--threads`) otherwise, about 2 ms per position: a few minutes for 50,000 games. Reading is fast (20,000 games in 3 seconds). The size of this file has no effect on how fast Barracuda plays: only the network's shape (768-256-32-32-1) does, and training never changes it. Then, as usual:
+```bash
+cat base_*.txt style_*.txt human.txt > all.txt
+./build/bin/barracuda-cli train --data all.txt --net barracuda.bnn --out barracuda.bnn --epochs 4 --lambda 0.6
+```
+
 **Right-click and text selection are disabled** on the website (`contextmenu`/`selectstart` handlers at the top of `web/js/app.js`, and the `user-select: none` rule at the end of `web/css/style.css`). This only stops casual copying; the page source stays readable in the browser. Delete those two pieces to bring both back.
 
 **Stylesheet check.** `node web/test/css_check.mjs` fails on an unbalanced brace in `web/css/style.css` (the deploy workflow runs it): browsers silently drop the rules after such a mistake.

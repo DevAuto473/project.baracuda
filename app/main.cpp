@@ -16,6 +16,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "barracuda/engine/import_pgn.h"
 #include "barracuda/engine/match.h"
 #include "barracuda/engine/movegen.h"
 #include "barracuda/engine/notation.h"
@@ -559,6 +560,49 @@ int cmd_trap_test(const Args& a, std::shared_ptr<const nnue::Network> net) {
     return 0;
 }
 
+// Human games from a PGN file (for example the Lichess database) -> training positions.
+int cmd_import_pgn(const Args& a, std::shared_ptr<const nnue::Network> net) {
+    const std::string in_path = a.get("in", "-");
+    const std::string out_path = a.get("out", "human.txt");
+    ImportPgnOptions o;
+    o.max_games = int(a.num("games", 50000));
+    o.min_elo = int(a.num("min-elo", 0));
+    o.max_elo = int(a.num("max-elo", 0));
+    o.skip_plies = int(a.num("skip-plies", 10));
+    o.every = int(a.num("every", 3));
+    o.min_plies = int(a.num("min-plies", 20));
+    o.depth = int(a.num("depth", 5));
+    o.threads = std::max(1, int(a.num("threads", int(std::thread::hardware_concurrency()))));
+    o.use_pgn_eval = a.num("pgn-eval", 1) != 0;
+    std::ifstream file;
+    std::istream* in = &std::cin;
+    if (in_path != "-") {
+        file.open(in_path);
+        if (!file) {
+            std::cerr << "cannot open '" << in_path << "'\n";
+            return 1;
+        }
+        in = &file;
+    }
+    std::printf("reading up to %d games (Elo %d..%d, one position in %d after ply %d), %d threads, depth %d\n", o.max_games,
+                o.min_elo, o.max_elo, o.every, o.skip_plies, o.threads, o.depth);
+    ImportPgnStats st;
+    std::string err;
+    if (!import_pgn(*in, out_path, o, net, g_stop, st, &err, [](const std::string& m) {
+            std::printf("  %s\n", m.c_str());
+            std::fflush(stdout);
+        })) {
+        std::cerr << err << "\n";
+        return 1;
+    }
+    std::printf("games: %d read, %d used (Elo filter %d, too short %d, other %d, illegal moves %d)\n", st.games_seen, st.games_used,
+                st.rejected_elo, st.rejected_short, st.rejected_other, st.illegal);
+    std::printf("%llu training positions written to %s (%llu scored from the PGN's own evaluation, %llu by search)\n",
+                (unsigned long long)st.positions, out_path.c_str(), (unsigned long long)st.from_pgn_eval,
+                (unsigned long long)st.from_search);
+    return 0;
+}
+
 int cmd_suite(const Args& a, std::shared_ptr<const nnue::Network> net) {
     std::vector<SuitePosition> suite;
     if (a.has("file")) {
@@ -740,6 +784,8 @@ void usage() {
         "                      [--batch N] [--lr X] [--lambda X] [--threads N] [--max-samples N]\n"
         "  barracuda-cli suite [--file wac.epd] [--movetime ms]   tactical suite + Elo estimate\n"
         "  barracuda-cli import-games --in games.csv|jsonl [--out human.txt] [--depth 6]   website games -> training data\n"
+        "  barracuda-cli import-pgn --in games.pgn|- [--games 50000] [--min-elo 1200 --max-elo 1800] [--every 3] [--depth 5] [--out human.txt]\n"
+        "                           PGN (e.g. Lichess, via zstdcat file.pgn.zst | ... --in -) -> training data\n"
         "  barracuda-cli publish [--net barracuda.bnn] [--out web/net] [--games 40] [--push]   website network + manifest (+ git push)\n"
         "  barracuda-cli match [--games N] [--movetime ms] [--net f.bnn]   NNUE vs classical, Elo +/- margin\n\n"
         "  Global: --net <file.bnn> (default: ./barracuda.bnn if present)  --classical\n",
@@ -782,6 +828,7 @@ int main(int argc, char** argv) {
     if (sub == "trap-test") return cmd_trap_test(args, net);
     if (sub == "publish") return cmd_publish(args);
     if (sub == "import-games") return cmd_import_games(args, net);
+    if (sub == "import-pgn") return cmd_import_pgn(args, net);
     usage();
     return sub == "help" || sub == "-h" ? 0 : 1;
 }

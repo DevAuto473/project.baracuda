@@ -2,7 +2,9 @@
 #include <atomic>
 #include <cmath>
 #include <cstdio>
+#include <fstream>
 #include <functional>
+#include <sstream>
 #include <random>
 #include <string>
 #include <thread>
@@ -11,6 +13,7 @@
 #include "barracuda/engine/match.h"
 #include "barracuda/engine/movegen.h"
 #include "barracuda/engine/notation.h"
+#include "barracuda/engine/import_pgn.h"
 #include "barracuda/engine/search.h"
 #include "barracuda/engine/suite.h"
 #include "barracuda/nnue/dataset.h"
@@ -436,6 +439,36 @@ TEST(traps_and_prediction) {
         CHECK(punished > trap_score + 60);
     }
     std::printf("  traps set in %d of %zu positions\n", traps, std::size(fens));
+}
+
+TEST(import_pgn) {
+    // Lichess-style PGN: comments with [%eval], clock tags, a game outside the rating window, a short game
+    const std::string game =
+        "1. e4 { [%eval 0.17] [%clk 0:03:00] } 1... e5 { [%eval 0.19] } 2. f4 exf4 3. Bc4 Qh4+ 4. Kf1 b5 5. Bxb5 Nf6 "
+        "6. Nf3 Qh6 7. d3 Nh5 8. Nh4 Qg5 9. Nf5 c6 10. g4 Nf6 11. Rg1 cxb5 12. h4 Qg6 13. h5 Qg5 14. Qf3 Ng8 "
+        "15. Bxf4 Qf6 16. Nc3 Bc5 17. Nd5 Qxb2 18. Bd6 Bxg1 19. e5 Qxa1+ 20. Ke2 Na6 21. Nxg7+ Kd8 22. Qf6+ Nxf6 23. Be7# 1-0\n\n";
+    const std::string pgn = "[Result \"1-0\"]\n[WhiteElo \"1500\"]\n[BlackElo \"1450\"]\n\n" + game +
+                            "[Result \"1-0\"]\n[WhiteElo \"2500\"]\n[BlackElo \"2500\"]\n\n" + game +
+                            "[Result \"1-0\"]\n[WhiteElo \"1500\"]\n[BlackElo \"1500\"]\n\n1. e4 e5 2. Qh5 1-0\n\n";
+    std::istringstream in(pgn);
+    ImportPgnOptions o;
+    o.min_elo = 1200;
+    o.max_elo = 1800;
+    o.skip_plies = 1;
+    o.every = 1;
+    o.depth = 3;
+    ImportPgnStats st;
+    std::atomic<bool> stop{false};
+    std::string err;
+    const std::string out = "/tmp/barracuda_import_pgn_test.txt";
+    CHECK(import_pgn(in, out, o, nullptr, stop, st, &err));
+    CHECK(st.games_seen == 3 && st.games_used == 1 && st.rejected_elo == 1 && st.rejected_short == 1);
+    CHECK(st.positions > 10 && st.from_pgn_eval == 2); // the two evaluated opening positions cost no search
+    std::ifstream f(out);
+    std::string line;
+    std::getline(f, line);
+    CHECK(line == "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1 | 17 | 1.0");
+    std::remove(out.c_str());
 }
 
 } // namespace
