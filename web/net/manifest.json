@@ -1,0 +1,12 @@
+{
+  "version": 1793872915,
+  "updated": "2026-11-05T10:01:55Z",
+  "eval": "classical",
+  "net": null,
+  "epochs": 0,
+  "samples": 0,
+  "elo": 2201,
+  "elo_error": 0,
+  "elo_basis": "tactical-suite estimate of the classical evaluator",
+  "match": {"games": 0, "wins": 0, "draws": 0, "losses": 0}
+}

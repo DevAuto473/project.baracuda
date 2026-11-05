@@ -9,6 +9,8 @@ compile_commands.json
 
 # generated data / networks (large; produce them with self-play + training)
 *.bnn
+!web/net/*.bnn
+/web/wasm-dist/
 selfplay*.txt
 *.ppm
 !docs/*.png

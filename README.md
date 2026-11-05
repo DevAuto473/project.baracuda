@@ -20,6 +20,7 @@ Barracuda runs fully offline with no LibTorch, ONNX, or Python. Bitboards, legal
 7. [Data formats](#7-data-formats)
 8. [Testing & verification](#8-testing--verification)
 9. [Known limitations](#9-known-limitations)
+10. [Play online: website on GitHub Pages](#10-play-online-website-on-github-pages)
 
 ---
 
@@ -300,3 +301,29 @@ Checks run while developing this repository (Ubuntu 24.04, GCC 13.3 and Clang 18
 - **No network weights are shipped.** You bootstrap one with self-play from the classical eval. A network trained on only a few thousand positions is much weaker than the classical eval, which is why *Auto* mode waits until the net has seen 1M samples.
 - The search is single-threaded (no Lazy SMP yet), and the engine supports standard chess only (no Chess960).
 - The GUI uses OpenGL 3.3 core. Very old GPU drivers, or VMs without 3D acceleration, may need Mesa's software renderer (`LIBGL_ALWAYS_SOFTWARE=1`).
+
+---
+
+## 10. Play online: website on GitHub Pages
+
+`web/` is a static site where anyone can play against Barracuda. The engine is compiled to **WebAssembly** and runs inside the visitor's browser (in a Web Worker), so there is no server to run or pay for. The site has the same black and purple look as the dashboard, a drag-and-click board, six strength levels, an evaluation bar, undo, and a panel showing the published network (epochs trained, Elo, update date).
+
+**Publishing the site (one time)**
+1. Merge your branch into `main` (the deploy workflow in `.github/workflows/pages.yml` runs on `main`).
+2. On GitHub: **Settings → Pages → Build and deployment → Source: GitHub Actions**. GitHub Pages on a *private* repository needs a paid GitHub plan; if the repository is free and private, make it public.
+3. Push to `main`. The workflow builds the WebAssembly module, runs a smoke test, and deploys. The site appears at `https://<your-user>.github.io/<repo>/`.
+
+**Updating the site after more training**
+```bash
+./build/bin/barracuda-cli publish --net barracuda.bnn --games 100
+git add web/net && git commit -m "Update network" && git push
+```
+`publish` plays the network against the classical evaluator, then writes `web/net/manifest.json` (epochs, samples, Elo with its margin, date) and copies the network next to it. **The site only switches to the network when it beats the classical evaluator in that match**; otherwise the manifest keeps the site on the classical evaluator and says so. `--force-nnue` overrides that, and `--games 0` skips the match.
+
+**Building and testing locally**
+```bash
+web/build.sh                                  # needs Emscripten (emcc) on PATH
+node web/test/wasm_test.mjs barracuda.bnn     # engine checks under Node
+python3 -m http.server -d web 8000            # then open http://localhost:8000
+```
+The WebAssembly build uses the same SSE4.1 NNUE kernels (mapped to WASM SIMD), and its network evaluations match the native build exactly. Visitors' games are not collected: training only happens on your machine.

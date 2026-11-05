@@ -1,8 +1,11 @@
 // barracuda-cli: UCI engine + headless tools (perft, bench, self-play, training, tactical suites).
 #include <atomic>
 #include <chrono>
+#include <cmath>
+#include <ctime>
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <map>
 #include <mutex>
@@ -285,6 +288,97 @@ int cmd_match(const Args& a, std::shared_ptr<const nnue::Network> net) {
     return 0;
 }
 
+// Writes the website's network + manifest.json. The match decides whether the site uses the network:
+// it is only switched on when it actually beats the classical evaluator (or with --force-nnue).
+int cmd_publish(const Args& a) {
+    namespace fs = std::filesystem;
+    const fs::path out = a.get("out", "web/net");
+    const std::string net_path = a.get("net", "barracuda.bnn");
+    std::error_code ec;
+    fs::create_directories(out, ec);
+
+    std::shared_ptr<const nnue::Network> net;
+    if (fs::exists(net_path, ec)) net = try_load_net(net_path, true);
+
+    // anchor: tactical-suite estimate of the classical evaluator
+    Search classical(32);
+    classical.set_eval_mode(EvalMode::CLASSICAL);
+    std::printf("calibrating classical evaluator on the tactical suite ...\n");
+    const SuiteResult cal = run_suite(classical, builtin_wac_suite(), 150, g_stop);
+    double elo = cal.elo_estimate, err = 0.0;
+    bool use_nnue = false;
+    MatchStats st;
+    const int games = int(a.num("games", 40));
+
+    if (net && games > 0) {
+        MatchConfig cfg;
+        cfg.games = games;
+        cfg.movetime_ms = int(a.num("movetime", 100));
+        Search nn(16), cl(16);
+        nn.set_network(net);
+        nn.set_eval_mode(EvalMode::NNUE);
+        cl.set_eval_mode(EvalMode::CLASSICAL);
+        std::printf("match: %d games at %d ms/move, NNUE vs classical ...\n", cfg.games, cfg.movetime_ms);
+        MatchCallbacks cb;
+        cb.on_game_end = [&](const MatchStats& m, const std::string&) {
+            std::printf("\r  game %d/%d  +%d =%d -%d  ", m.games_done, cfg.games, m.wins, m.draws, m.losses);
+            std::fflush(stdout);
+        };
+        run_match(nn, cl, cfg, g_stop, cb, &st);
+        std::printf("\n");
+        if (st.games_done > 0) {
+            use_nnue = st.elo.elo > 0.0;
+            if (use_nnue) {
+                elo = cal.elo_estimate + st.elo.elo;
+                err = st.elo.error;
+            }
+        }
+    }
+    if (net && a.has("force-nnue")) use_nnue = true;
+    if (a.has("force-classical")) use_nnue = false;
+
+    const fs::path dest = out / "barracuda.bnn";
+    if (net && use_nnue) {
+        fs::copy_file(net_path, dest, fs::copy_options::overwrite_existing, ec);
+        if (ec) {
+            std::cerr << "cannot copy network: " << ec.message() << "\n";
+            return 1;
+        }
+    } else {
+        fs::remove(dest, ec); // the site must not ship a network it should not use
+    }
+
+    const std::time_t now = std::time(nullptr);
+    char iso[32];
+    std::strftime(iso, sizeof(iso), "%Y-%m-%dT%H:%M:%SZ", std::gmtime(&now));
+    const bool measured = use_nnue && st.games_done > 0;
+    std::string basis = measured ? "classical anchor (tactical suite) + measured match advantage"
+                        : use_nnue ? "network not measured (forced); Elo shown is the classical anchor"
+                                   : "tactical-suite estimate of the classical evaluator";
+    std::ostringstream js;
+    js << "{\n"
+       << "  \"version\": " << (long long)now << ",\n"
+       << "  \"updated\": \"" << iso << "\",\n"
+       << "  \"eval\": \"" << (use_nnue ? "nnue" : "classical") << "\",\n"
+       << "  \"net\": " << (net && use_nnue ? "\"barracuda.bnn\"" : "null") << ",\n"
+       << "  \"epochs\": " << (net ? net->epochs_trained() : 0) << ",\n"
+       << "  \"samples\": " << (net ? (unsigned long long)net->samples_trained() : 0ULL) << ",\n"
+       << "  \"elo\": " << (long long)std::llround(elo) << ",\n"
+       << "  \"elo_error\": " << (long long)std::llround(err) << ",\n"
+       << "  \"elo_basis\": \"" << basis << "\",\n"
+       << "  \"match\": {\"games\": " << st.games_done << ", \"wins\": " << st.wins << ", \"draws\": " << st.draws
+       << ", \"losses\": " << st.losses << "}\n"
+       << "}\n";
+    std::ofstream(out / "manifest.json") << js.str();
+    std::printf("\npublished to %s: eval=%s, Elo ~%.0f%s\n", out.string().c_str(), use_nnue ? "nnue" : "classical", elo,
+                use_nnue ? (" +/- " + std::to_string(int(std::llround(err)))).c_str() : "");
+    if (net && !use_nnue && !a.has("force-nnue"))
+        std::printf("note: the network did not beat the classical evaluator yet, so the site keeps using the classical one.\n"
+                    "      Train longer (more self-play data / epochs) and publish again, or use --force-nnue.\n");
+    std::printf("next: git add %s && git commit -m \"Update network\" && git push\n", out.string().c_str());
+    return 0;
+}
+
 int cmd_suite(const Args& a, std::shared_ptr<const nnue::Network> net) {
     std::vector<SuitePosition> suite;
     if (a.has("file")) {
@@ -458,6 +552,7 @@ void usage() {
         "  barracuda-cli train --data selfplay.txt [--out barracuda.bnn] [--net init.bnn] [--epochs N]\n"
         "                      [--batch N] [--lr X] [--lambda X] [--threads N] [--max-samples N]\n"
         "  barracuda-cli suite [--file wac.epd] [--movetime ms]   tactical suite + Elo estimate\n"
+        "  barracuda-cli publish [--net barracuda.bnn] [--out web/net] [--games 40]   write the website network + manifest\n"
         "  barracuda-cli match [--games N] [--movetime ms] [--net f.bnn]   NNUE vs classical, Elo +/- margin\n\n"
         "  Global: --net <file.bnn> (default: ./barracuda.bnn if present)  --classical\n",
         kVersion);
@@ -495,6 +590,7 @@ int main(int argc, char** argv) {
     if (sub == "train") return cmd_train(args);
     if (sub == "suite") return cmd_suite(args, net);
     if (sub == "match") return cmd_match(args, net);
+    if (sub == "publish") return cmd_publish(args);
     usage();
     return sub == "help" || sub == "-h" ? 0 : 1;
 }
