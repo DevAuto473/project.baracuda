@@ -1,0 +1,14 @@
+# build trees
+/build*/
+/out/
+/.vs/
+/.vscode/
+/.idea/
+CMakeUserPresets.json
+compile_commands.json
+
+# generated data / networks (large; produce them with self-play + training)
+*.bnn
+selfplay*.txt
+*.ppm
+!docs/*.png

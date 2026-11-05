@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  ubuntu:
+    name: Ubuntu 24.04 (${{ matrix.compiler }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build tools and GUI headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang cmake ninja-build pkg-config \
+            libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxext-dev \
+            libgl1-mesa-dev libwayland-dev libxkbcommon-dev xvfb
+      - name: Configure
+        run: |
+          if [ "${{ matrix.compiler }}" = "clang" ]; then export CC=clang CXX=clang++; fi
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBARRACUDA_SIMD=SSE41
+      - name: Build
+        run: cmake --build build -j
+      - name: Unit tests
+        run: ctest --test-dir build --output-on-failure
+      - name: CLI smoke test
+        run: |
+          ./build/bin/barracuda-cli perft 5
+          ./build/bin/barracuda-cli bench 8
+      - name: GUI smoke test (Xvfb, software GL)
+        run: |
+          xvfb-run -s "-screen 0 1600x940x24" env LIBGL_ALWAYS_SOFTWARE=1 \
+            ./build/bin/barracuda --screenshot shot.ppm --frames 60 --exec "selfplay 2 3"
+          test -s shot.ppm
+
+  fedora:
+    name: Fedora (GCC)
+    runs-on: ubuntu-24.04
+    container: fedora:41
+    steps:
+      - name: Install build tools and GUI headers
+        run: |
+          dnf install -y gcc-c++ cmake ninja-build git pkgconf-pkg-config \
+            libX11-devel libXrandr-devel libXinerama-devel libXcursor-devel libXi-devel libXext-devel \
+            mesa-libGL-devel wayland-devel libxkbcommon-devel
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBARRACUDA_SIMD=SSE41
+      - name: Build
+        run: cmake --build build -j
+      - name: Unit tests
+        run: ctest --test-dir build --output-on-failure
+
+  windows-msvc:
+    name: Windows (MSVC 2022)
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DBARRACUDA_SIMD=SSE41
+      - name: Build
+        run: cmake --build build --config Release --parallel
+      - name: Unit tests
+        run: ctest --test-dir build -C Release --output-on-failure
+      - name: CLI smoke test
+        run: |
+          build\bin\Release\barracuda-cli.exe perft 5
+          build\bin\Release\barracuda-cli.exe bench 8
+
+  windows-mingw:
+    name: Windows (MSYS2 UCRT64 / MinGW-w64)
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          install: >-
+            git
+            mingw-w64-ucrt-x86_64-toolchain
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBARRACUDA_SIMD=SSE41
+      - name: Build
+        run: cmake --build build -j
+      - name: Unit tests
+        run: ctest --test-dir build --output-on-failure

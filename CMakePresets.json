@@ -1,0 +1,54 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": { "major": 3, "minor": 21, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "release",
+      "displayName": "Release (Ninja)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "debug",
+      "displayName": "Debug (Ninja)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build-debug",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "BARRACUDA_LTO": "OFF" }
+    },
+    {
+      "name": "headless",
+      "displayName": "Engine + CLI + tests only (no GUI dependencies)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build-headless",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release", "BARRACUDA_BUILD_GUI": "OFF" }
+    },
+    {
+      "name": "native",
+      "displayName": "Release tuned for this CPU (-march=native)",
+      "inherits": "release",
+      "binaryDir": "${sourceDir}/build-native",
+      "cacheVariables": { "BARRACUDA_NATIVE": "ON" }
+    },
+    {
+      "name": "msvc-release",
+      "displayName": "Visual Studio 2022 x64",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/build-msvc",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
+    }
+  ],
+  "buildPresets": [
+    { "name": "release", "configurePreset": "release" },
+    { "name": "debug", "configurePreset": "debug" },
+    { "name": "headless", "configurePreset": "headless" },
+    { "name": "native", "configurePreset": "native" },
+    { "name": "msvc-release", "configurePreset": "msvc-release", "configuration": "Release" }
+  ],
+  "testPresets": [
+    { "name": "release", "configurePreset": "release", "output": { "outputOnFailure": true } },
+    { "name": "headless", "configurePreset": "headless", "output": { "outputOnFailure": true } },
+    { "name": "msvc-release", "configurePreset": "msvc-release", "configuration": "Release", "output": { "outputOnFailure": true } }
+  ]
+}
