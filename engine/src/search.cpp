@@ -110,6 +110,7 @@ bool Search::should_stop() {
 Value Search::evaluate_node() {
     Value v = use_nnue_ ? net_->evaluate(acc_->current(), pos_.side_to_move()) : eval::classical(pos_);
     if (style_.enabled && style_.hunt) v = hunt_bonus(v);
+    if (style_.enabled && style_.aggression > 0) v += aggression_bonus();
     // fade towards a draw as the 50-move counter grows
     v = v * (200 - pos_.rule50()) / 200;
     return std::clamp(v, VALUE_MATED_IN_MAX_PLY + 1, VALUE_MATE_IN_MAX_PLY - 1);
@@ -119,16 +120,38 @@ Value Search::evaluate_node() {
 // the edge of the board and, when the defender has little left, walking the winning king up to it.
 // This turns a won position into a mate in fewer moves instead of collecting more material.
 Value Search::hunt_bonus(Value v) const {
-    if (v > -300 && v < 300) return v;
+    if (v > -200 && v < 200) return v;
     const Color stm = pos_.side_to_move();
     const Color winner = v > 0 ? stm : ~stm, loser = ~winner;
     const Square kl = pos_.king_square(loser), kw = pos_.king_square(winner);
     const int fl = file_of(kl), rl = rank_of(kl);
     const int edge = std::max(3 - fl, fl - 4) + std::max(3 - rl, rl - 4); // 0 in the centre .. 6 in a corner
     const int dist = std::abs(file_of(kw) - fl) + std::abs(rank_of(kw) - rl); // 1 .. 14
-    int bonus = 12 * edge;
-    if (pos_.non_pawn_material(loser) <= 1300 && !pos_.pieces(loser, QUEEN)) bonus += 6 * (14 - dist);
+    int bonus = 16 * edge;
+    if (pos_.non_pawn_material(loser) <= 1300 && !pos_.pieces(loser, QUEEN)) bonus += 8 * (14 - dist);
     return Value(v + (winner == stm ? bonus : -bonus));
+}
+
+// Attack hunger: how many squares around the enemy king the engine's pieces hit (queen and rooks
+// count more), from the side to move's point of view. Only the engine's own attacks are rewarded:
+// the opponent is not credited the same way, which makes the engine optimistic about attacking.
+Value Search::aggression_bonus() const {
+    const Color us = root_color_, them = ~us;
+    const Square ksq = pos_.king_square(them);
+    const Bitboard zone = attacks::king(ksq) | square_bb(ksq);
+    const Bitboard occ = pos_.pieces();
+    static constexpr int kWeight[PIECE_TYPE_NB] = {0, 2, 2, 3, 5, 0}; // P N B R Q K
+    int units = 0, attackers = 0;
+    for (PieceType pt : {KNIGHT, BISHOP, ROOK, QUEEN}) {
+        Bitboard b = pos_.pieces(us, pt);
+        while (b) {
+            const int n = popcount(attacks::piece(pt, pop_lsb(b), occ) & zone);
+            if (n) units += n * kWeight[pt], ++attackers;
+        }
+    }
+    // several attackers together are far more dangerous than one
+    const int bonus = std::min(160, units * (2 + attackers) * std::clamp(style_.aggression, 0, 100) / 100);
+    return Value(pos_.side_to_move() == us ? bonus : -bonus);
 }
 
 void Search::make(Move m) {
@@ -419,6 +442,7 @@ SearchResult Search::go(const Position& root, const SearchLimits& limits, const 
     stop_.store(false, std::memory_order_relaxed);
     limits_ = limits;
     pos_ = root;
+    root_color_ = root.side_to_move();
     nodes_ = 0;
     can_stop_ = false;
     time_up_ = false;

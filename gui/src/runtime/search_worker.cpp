@@ -82,6 +82,7 @@ void SearchWorker::do_go(const Go& g) {
         so.trap = 50;
         so.contempt = 30;
         so.hunt = true;
+        so.aggression = 100;
         search_.set_style(so);
     }
     const Color stm = g.pos.side_to_move();

@@ -80,6 +80,9 @@ struct StyleOptions {
     int contempt = 0;
     // Once clearly winning, steer for the mate (losing king to the edge) instead of more material.
     bool hunt = false;
+    // Attack hunger, 0..100: the engine values its own pieces bearing on the enemy king's
+    // surroundings (from the opening on), so it builds attacks instead of quiet edges.
+    int aggression = 0;
     std::uint64_t seed = 0;  // 0 = random
 };
 int style_margin(Value best_score);                 // allowed loss in centipawns
@@ -159,6 +162,8 @@ private:
     bool try_trap(const MoveList& root_moves, SearchResult& result);
     Move shallow_best(int ply, int depth);
     Value hunt_bonus(Value v) const;
+    Value aggression_bonus() const;
+    Color root_color_ = WHITE;
     Value draw_value(int ply) const {
         // ply 0 is the engine to move: a draw costs it `contempt`, and gains the opponent as much
         return style_.enabled ? Value((ply & 1) ? style_.contempt : -style_.contempt) : VALUE_DRAW;

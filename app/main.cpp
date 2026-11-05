@@ -463,6 +463,10 @@ int cmd_style_test(const Args& a, std::shared_ptr<const nnue::Network> net) {
     so.enabled = true;
     so.margin_percent = int(a.num("margin", 100));
     so.verify_percent = int(a.num("verify", 0));
+    so.trap = int(a.num("trap", 0));
+    so.contempt = int(a.num("contempt", 0));
+    so.hunt = a.num("hunt", 0) != 0;
+    so.aggression = int(a.num("aggr", 0));
     styled.set_style(so);
     std::printf("strange style vs normal play: %d games at %d ms/move\n", cfg.games, cfg.movetime_ms);
     MatchCallbacks cb;
@@ -500,6 +504,7 @@ int cmd_trap_test(const Args& a, std::shared_ptr<const nnue::Network> net) {
             so.trap = traps ? trap : 0;
             so.margin_percent = int(a.num("margin", 100));
             so.hunt = a.num("hunt", 1) != 0;
+            so.aggression = int(a.num("aggr", 100));
             so.seed = std::uint64_t(g + 1);
             engine.set_style(so);
             Position pos;

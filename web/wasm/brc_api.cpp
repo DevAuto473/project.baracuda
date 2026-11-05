@@ -149,6 +149,7 @@ BRC_EXPORT void brc_set_opponent(int trap, int contempt) {
     g_style.trap = std::clamp(trap, 0, 100);
     g_style.contempt = std::clamp(contempt, 0, 200);
     g_style.hunt = true;
+    g_style.aggression = 100; // hungry for the enemy king
     search().set_style(g_style);
 }
 // After brc_search: the natural-looking reply the move sets a trap for ("" when it is no trap).
