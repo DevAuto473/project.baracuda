@@ -45,7 +45,7 @@ ctest --test-dir build --output-on-failure
 ./build/bin/barracuda
 ```
 
-GLFW is built with **both** the Wayland and X11 backends when their headers are present. On a Wayland session it uses Wayland natively; you can force X11/XWayland with `GLFW_PLATFORM=x11`. Use `CC=clang CXX=clang++ cmake ...` to build with Clang.
+GLFW is built with **both** the Wayland and X11 backends when their headers are present. On a Wayland session it uses Wayland natively; you can force X11/XWayland by launching with `XDG_SESSION_TYPE=x11 ./build/bin/barracuda` (GLFW follows `XDG_SESSION_TYPE` when both backends are compiled in). Use `CC=clang CXX=clang++ cmake ...` to build with Clang.
 
 ### 1.2 Ubuntu (GCC/Clang, X11)
 
